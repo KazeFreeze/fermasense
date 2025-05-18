@@ -1,18 +1,21 @@
 /* static/css/style.css */
 :root {
   --primary-color: #3498db; /* Bright Blue */
-  --secondary-color: #2c3e50; /* Dark Blue-Gray */
+  --secondary-color: #34495e; /* Darker Blue-Gray for top bar */
   --accent-color: #e67e22; /* Orange for heating */
   --cool-color: #1abc9c; /* Turquoise for cooling */
   --idle-color: #95a5a6; /* Gray for idle */
-  --bg-color: #ecf0f1; /* Light Gray Background */
-  --panel-bg-color: #ffffff;
-  --text-color: #333333;
-  --light-text-color: #f8f9fa;
-  --border-color: #bdc3c7;
-  --success-color: #2ecc71;
-  --error-color: #e74c3c;
-  --font-family: "Roboto", "Segoe UI", sans-serif;
+  --bg-color: #dde1e2; /* Dirty Gray Background */
+  --panel-bg-color: #f8f9fa; /* Lighter panel background */
+  --text-color: #2c3e50; /* Dark Blue-Gray text */
+  --light-text-color: #ffffff;
+  --border-color: #7f8c8d; /* Dark Gray Outline for containers */
+  --success-color: #27ae60; /* Green */
+  --error-color: #c0392b; /* Red */
+  --font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
+  --top-bar-height: 45px; /* Shorter top bar */
+  --container-padding: 10px; /* Smaller padding */
+  --border-radius: 0px; /* Sharp corners */
 }
 
 body {
@@ -20,226 +23,313 @@ body {
   margin: 0;
   background-color: var(--bg-color);
   color: var(--text-color);
-  line-height: 1.6;
-  font-size: 16px;
+  line-height: 1.5;
+  font-size: 14px; /* Slightly smaller base font for denser UI */
 }
 
-.dashboard-container {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-.dashboard-header {
+.top-bar {
   background-color: var(--secondary-color);
   color: var(--light-text-color);
-  padding: 20px 30px;
-  text-align: center;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 0 var(--container-padding);
+  height: var(--top-bar-height);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
 }
 
-.dashboard-header h1 {
-  margin: 0;
-  font-size: 2.2em;
-  font-weight: 500;
+.top-bar-title {
+  font-size: 1.5em;
+  font-weight: 600;
 }
 
-.dashboard-header p {
-  margin: 5px 0 0;
-  font-size: 1em;
-  opacity: 0.9;
+.top-bar-device-selector select {
+  background-color: var(--secondary-color);
+  color: var(--light-text-color);
+  border: 1px solid var(--border-color);
+  padding: 5px 8px;
+  font-size: 0.9em;
+  border-radius: var(--border-radius);
+}
+
+.dashboard-layout {
+  display: flex;
+  padding-top: var(--top-bar-height); /* Account for fixed top bar */
+  min-height: calc(
+    100vh - var(--top-bar-height) - 30px
+  ); /* Full height minus top and footer */
+}
+
+.left-sidebar {
+  width: 260px;
+  padding: var(--container-padding);
+  background-color: var(
+    --bg-color
+  ); /* Match overall background or slightly different */
+  display: flex;
+  flex-direction: column;
+  gap: var(--container-padding);
+  border-right: 1px solid var(--border-color);
 }
 
 .dashboard-main {
   flex-grow: 1;
-  padding: 20px;
+  padding: var(--container-padding);
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--container-padding);
+  overflow-y: auto; /* Allows main content to scroll if it overflows */
 }
 
 .panel {
   background-color: var(--panel-bg-color);
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+  padding: var(--container-padding);
   border: 1px solid var(--border-color);
+  border-radius: var(--border-radius); /* Sharp corners */
+  box-shadow: none; /* Remove existing shadow if any, rely on border */
 }
 
 .panel h2 {
   color: var(--secondary-color);
   margin-top: 0;
-  font-size: 1.4em;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--bg-color);
+  margin-bottom: 10px;
+  font-size: 1.2em;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
 }
-.panel h2 .icon {
-  margin-right: 10px;
-  font-size: 1.2em;
+.panel h2 .icon-svg {
+  /* For SVG icons if used */
+  margin-right: 8px;
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
 }
 
 /* Status Panel */
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
-  font-size: 0.95em;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  font-size: 0.9em;
 }
 .status-grid div {
-  padding: 5px 0;
+  padding: 4px 0;
 }
 .status-grid strong {
   color: var(--primary-color);
-  font-weight: 500;
+  font-weight: 600;
+}
+.state-display {
+  display: flex;
+  align-items: center;
 }
 .state-display strong {
-  margin-right: 8px;
+  margin-right: 5px;
 }
-.animation-icon {
+
+.state-indicator-icon {
   display: inline-block;
-  font-size: 1.2em;
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: white;
-  min-width: 25px;
-  text-align: center;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--border-radius); /* Rectangular indicator */
+  border: 1px solid var(--text-color);
 }
-.state-heating .animation-icon {
+.state-indicator-heating {
   background-color: var(--accent-color);
-  animation: pulse 1s infinite;
 }
-.state-cooling .animation-icon {
+.state-indicator-cooling {
   background-color: var(--cool-color);
-  animation: pulse 1s infinite;
 }
-.state-idle .animation-icon {
+.state-indicator-idle {
   background-color: var(--idle-color);
 }
 
-@keyframes pulse {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.15);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
 .equalization-info {
-  margin-top: 15px;
-  font-size: 0.9em;
-  color: var(--text-color);
+  margin-top: 10px;
+  font-size: 0.85em;
 }
 .equalization-info span {
-  font-weight: 500;
+  font-weight: 600;
   color: var(--primary-color);
 }
 
-/* Control Panel */
+/* Control Panel & Config Panel */
 .control-group {
-  margin-bottom: 15px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-wrap: wrap; /* Allow items to wrap */
+  align-items: center; /* Align items nicely */
+  gap: 8px; /* Space between elements in a group */
 }
 .control-group label {
-  display: block;
-  margin-bottom: 5px;
+  margin-bottom: 3px;
   font-weight: 500;
   font-size: 0.9em;
+  flex-basis: 100%; /* Labels take full width on their line if wrapping */
 }
-.control-group input[type="number"] {
-  padding: 8px 10px;
+.control-group input[type="number"],
+.control-group input[type="datetime-local"],
+.control-group select {
+  padding: 6px 8px;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  margin-right: 10px;
-  width: 120px; /* Adjust as needed */
+  border-radius: var(--border-radius);
+  font-size: 0.9em;
+  background-color: var(--light-text-color); /* Lighter background for inputs */
+  color: var(--text-color);
+  flex-grow: 1; /* Allow inputs to take available space */
+  min-width: 80px; /* Minimum width for inputs */
 }
 .control-group button,
-.export-panel button {
-  padding: 8px 15px;
+.export-panel button,
+.config-panel button {
+  padding: 6px 12px;
   background-color: var(--primary-color);
   color: var(--light-text-color);
-  border: none;
-  border-radius: 4px;
+  border: 1px solid var(--primary-color); /* Border for definition */
+  border-radius: var(--border-radius);
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
   font-size: 0.9em;
+  text-align: center;
 }
 .control-group button:hover,
-.export-panel button:hover {
+.export-panel button:hover,
+.config-panel button:hover {
   background-color: #2980b9; /* Darker primary */
+  border-color: #2980b9;
 }
+
+/* Specific button styling */
 .mode-buttons button.active {
   background-color: var(--secondary-color);
+  border-color: var(--secondary-color);
   font-weight: bold;
 }
 .manual-op-buttons button {
-  margin: 5px;
+  margin: 3px;
 }
-.manual-op-buttons button:nth-child(1) {
+.manual-op-buttons button:nth-of-type(1) {
   background-color: var(--accent-color);
+  border-color: var(--accent-color);
 } /* Heat */
-.manual-op-buttons button:nth-child(1):hover {
+.manual-op-buttons button:nth-of-type(1):hover {
   background-color: #d35400;
+  border-color: #d35400;
 }
-.manual-op-buttons button:nth-child(2) {
+.manual-op-buttons button:nth-of-type(2) {
   background-color: var(--idle-color);
+  border-color: var(--idle-color);
 } /* Idle */
-.manual-op-buttons button:nth-child(2):hover {
+.manual-op-buttons button:nth-of-type(2):hover {
   background-color: #7f8c8d;
+  border-color: #7f8c8d;
 }
-.manual-op-buttons button:nth-child(3) {
+.manual-op-buttons button:nth-of-type(3) {
   background-color: var(--cool-color);
+  border-color: var(--cool-color);
 } /* Cool */
-.manual-op-buttons button:nth-child(3):hover {
+.manual-op-buttons button:nth-of-type(3):hover {
   background-color: #16a085;
+  border-color: #16a085;
+}
+
+/* Export Panel (in sidebar) & Config Panel */
+.export-panel button,
+.config-panel button {
+  display: block; /* Stack buttons */
+  width: 100%;
+  margin-bottom: 8px;
+}
+.export-panel button {
+  background-color: var(--success-color);
+  border-color: var(--success-color);
+}
+.export-panel button:hover {
+  background-color: #27ae60;
+  border-color: #27ae60;
+}
+.config-panel button {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+.config-panel button:hover {
+  background-color: #2980b9;
+  border-color: #2980b9;
 }
 
 /* Chart Panel */
 .chart-panel {
-  grid-column: 1 / -1;
-} /* Span full width */
+  grid-column: span 2; /* Default to span 2 columns if possible */
+}
+@media (max-width: 900px) {
+  /* On smaller screens, charts take full width */
+  .chart-panel {
+    grid-column: span 1;
+  }
+}
+
 .chart-wrapper {
   position: relative;
-  height: 400px; /* Adjust as needed */
-  margin-top: 15px;
+  height: 300px; /* Adjust as needed */
+  margin-top: 10px;
+  border: 1px solid var(--border-color); /* Border around chart canvas */
 }
-#temperatureChart {
+#temperatureChart,
+#equalizationChart {
   width: 100%;
   height: 100%;
 }
 .chart-controls {
   display: flex;
+  flex-wrap: wrap; /* Allow controls to wrap */
   align-items: center;
-  gap: 10px;
-  font-size: 0.9em;
+  gap: 8px;
+  font-size: 0.85em;
+  margin-bottom: 10px;
+}
+.chart-controls label {
+  margin-right: 4px;
 }
 .chart-controls select,
+.chart-controls input[type="datetime-local"],
 .chart-controls button {
-  padding: 6px 10px;
+  padding: 5px 8px;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--border-radius);
   background-color: var(--panel-bg-color);
+  font-size: 1em; /* Relative to parent's 0.85em */
+}
+#customDateRangePicker,
+#customEqDateRangePicker {
+  display: flex;
+  gap: 5px;
+  align-items: center;
 }
 
 /* Log Panel */
 .log-panel {
-  grid-column: 1 / -1;
-} /* Span full width */
+  grid-column: 1 / -1; /* Span full width */
+}
 .log-output {
-  height: 150px;
+  height: 120px;
   overflow-y: auto;
-  border: 1px solid var(--bg-color);
-  padding: 10px;
-  font-size: 0.85em;
-  background-color: #fdfdfd;
-  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  padding: 8px;
+  font-size: 0.8em;
+  background-color: #f0f0f0; /* Slightly different background for log */
+  border-radius: var(--border-radius);
+  font-family: "Monaco", "Consolas", monospace;
 }
 .log-output div {
-  padding: 3px 0;
-  border-bottom: 1px dotted #eee;
+  padding: 2px 0;
+  border-bottom: 1px dotted #ccc;
   word-break: break-all;
 }
 .log-output div:last-child {
@@ -252,52 +342,88 @@ body {
   color: var(--error-color);
   font-weight: 500;
 }
-.log-output .log-cmd_sent {
+.log-output .log-cmd_sent,
+.log-output .log-cmd_recv {
   color: var(--primary-color);
   font-style: italic;
 }
 .log-output .log-mcu_unknown {
-  color: #777;
+  color: #555;
 }
-
-/* Export Panel */
-.export-panel button {
-  background-color: var(--success-color);
-  margin-right: 10px;
-}
-.export-panel button:hover {
-  background-color: #27ae60;
+.log-output .log-success {
+  color: var(--success-color);
 }
 
 .dashboard-footer {
   background-color: var(--secondary-color);
   color: var(--light-text-color);
   text-align: center;
-  padding: 15px;
-  font-size: 0.85em;
+  padding: 8px;
+  font-size: 0.8em;
   opacity: 0.9;
-  margin-top: auto; /* Pushes footer to bottom if content is short */
+  width: 100%;
+  box-sizing: border-box;
 }
+
+/* Tooltip Styling (Basic - can be enhanced with JS) */
+[title] {
+  position: relative;
+  /* cursor: help; */ /* Optional: change cursor on hover */
+}
+/* More advanced tooltips would require JS or more CSS */
 
 /* Responsive Adjustments */
 @media (max-width: 768px) {
+  .dashboard-layout {
+    flex-direction: column; /* Stack sidebar and main content */
+  }
+  .left-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0; /* Remove bottom padding if stacked */
+    max-height: 50vh; /* Limit height of sidebar when stacked */
+    overflow-y: auto;
+  }
   .dashboard-main {
     grid-template-columns: 1fr; /* Stack panels on smaller screens */
+    padding-top: 0;
   }
   .chart-panel,
   .log-panel {
     grid-column: auto; /* Reset span */
   }
-  .control-group input[type="number"] {
+  .control-group input[type="number"],
+  .control-group input[type="datetime-local"],
+  .control-group select {
     width: auto; /* Allow natural width */
     flex-grow: 1;
   }
   .control-group {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
+    gap: 5px;
   }
-  .control-group label {
-    flex-basis: 100%;
+  .top-bar-title {
+    font-size: 1.2em;
+  }
+  .top-bar-device-selector select {
+    font-size: 0.8em;
+  }
+}
+
+@media (max-width: 480px) {
+  .status-grid {
+    grid-template-columns: 1fr; /* Single column for status items */
+  }
+  .chart-controls,
+  #customDateRangePicker,
+  #customEqDateRangePicker {
+    flex-direction: column;
+    align-items: stretch; /* Make controls full width */
+  }
+  .chart-controls input,
+  .chart-controls select,
+  .chart-controls button {
+    width: 100%;
+    box-sizing: border-box;
   }
 }

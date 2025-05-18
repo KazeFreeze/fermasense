@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FermaSense: Smart Fermentation Monitor</title>
     <link
+      rel="icon"
+      href="{{ url_for('static', filename='img/icon.png') }}"
+      type="image/png"
+    />
+    <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/style.css') }}"
     />
@@ -14,47 +19,211 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
   </head>
   <body>
-    <div class="dashboard-container">
-      <header class="dashboard-header">
-        <h1>FermaSense</h1>
-        <p>Smart Fermentation Monitor and Control System</p>
-      </header>
+    <div class="top-bar">
+      <div class="top-bar-title">FermaSense</div>
+      <div class="top-bar-device-selector">
+        <select id="fermaSenseDevice" title="Select FermaSense Unit">
+          <option value="1">FermaSense #1</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="dashboard-layout">
+      <aside class="left-sidebar">
+        <section class="panel export-panel">
+          <h2 title="Export recorded fermentation and equalization data.">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              class="bi bi-download"
+              viewBox="0 0 16 16"
+              style="margin-right: 5px"
+            >
+              <path
+                d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"
+              />
+              <path
+                d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"
+              /></svg
+            >Data Export
+          </h2>
+          <button
+            onclick="downloadLog('main')"
+            title="Download the main fermentation data log as a CSV file."
+          >
+            Download Main Log
+          </button>
+          <button
+            onclick="downloadLog('equalization')"
+            title="Download the equalization events log as a CSV file."
+          >
+            Download Equalization Log
+          </button>
+        </section>
+
+        <section class="panel config-panel">
+          <h2 title="System and connection configuration.">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              class="bi bi-gear-fill"
+              viewBox="0 0 16 16"
+              style="margin-right: 5px"
+            >
+              <path
+                d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311a1.464 1.464 0 0 1 .872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1-.872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1-.872-2.105l.34-.1c1.4-.413-1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1 .872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.858 2.929 2.929 0 0 1 0 5.858z"
+              /></svg
+            >Configuration
+          </h2>
+          <div class="control-group">
+            <label
+              for="serialPortSelect"
+              title="Select the COM port your FermaSense device is connected to."
+              >Serial Port:</label
+            >
+            <select id="serialPortSelect" onchange="setSerialPort()">
+              <option value="">Auto-detect</option>
+            </select>
+            <button
+              onclick="refreshSerialPorts()"
+              title="Refresh the list of available serial ports."
+            >
+              Rescan
+            </button>
+          </div>
+          <div class="control-group">
+            <label
+              for="dataRetentionDays"
+              title="Set how many days of historical data to keep (0 for unlimited). Future feature."
+              >Data Retention (days):</label
+            >
+            <input
+              type="number"
+              id="dataRetentionDays"
+              value="0"
+              min="0"
+              title="Currently a placeholder. Functionality to be implemented."
+            />
+          </div>
+        </section>
+      </aside>
 
       <main class="dashboard-main">
         <section class="panel status-panel">
-          <h2><span class="icon">📊</span>Current Status</h2>
+          <h2 title="Real-time overview of the fermentation process.">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              class="bi bi-bar-chart-line-fill"
+              viewBox="0 0 16 16"
+              style="margin-right: 5px"
+            >
+              <path
+                d="M11 2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v12h.5a.5.5 0 0 1 0 1H.5a.5.5 0 0 1 0-1H1v-3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3h1V7a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v7h1V2z"
+              /></svg
+            >Current Status
+          </h2>
           <div class="status-grid">
-            <div>MCU Time: <strong id="mcuTime">--:--:--</strong> s</div>
-            <div>Temperature: <strong id="currentTemp">--.- °C</strong></div>
-            <div>Set Temp: <strong id="setTemp">--.- °C</strong></div>
-            <div>Mode: <strong id="currentMode">-----</strong></div>
-            <div class="state-display">
-              State: <strong id="currentState">-----</strong>
-              <span id="stateAnimation" class="animation-icon"></span>
+            <div title="Timestamp from the FermaSense microcontroller.">
+              MCU Time: <strong id="mcuTime">--:--:--</strong> s
             </div>
-            <div>Read Interval: <strong id="readInterval">---- ms</strong></div>
+            <div title="Current measured temperature of the fermenter.">
+              Temperature: <strong id="currentTemp">--.- °C</strong>
+            </div>
+            <div
+              title="Desired temperature range for fermentation (Min - Max)."
+            >
+              Target Range: <strong id="setTempRange">--.- / --.- °C</strong>
+            </div>
+            <div
+              title="Operating mode: AUTO (automatic control) or MANUAL (user control)."
+            >
+              Mode: <strong id="currentMode">-----</strong>
+            </div>
+            <div
+              class="state-display"
+              title="Current action of the temperature control system (Heating, Cooling, or Idle)."
+            >
+              State: <strong id="currentState">-----</strong>
+              <span id="stateIndicator" class="state-indicator-icon"></span>
+            </div>
+            <div
+              title="Frequency at which the FermaSense device reads and reports temperature."
+            >
+              Read Interval: <strong id="readInterval">---- ms</strong>
+            </div>
           </div>
-          <div class="equalization-info">
+          <div
+            class="equalization-info"
+            title="Details of the last temperature equalization event."
+          >
             Last Equalization: <span id="lastEqTime">N/A</span>
           </div>
         </section>
 
         <section class="panel control-panel">
-          <h2><span class="icon">⚙️</span>System Controls</h2>
+          <h2 title="Adjust FermaSense settings and control its operation.">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              class="bi bi-sliders"
+              viewBox="0 0 16 16"
+              style="margin-right: 5px"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M11.5 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM9.05 3a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0V3h9.05zM4.5 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM2.05 8a2.5 2.5 0 0 1 4.9 0H16v1H6.95a2.5 2.5 0 0 1-4.9 0H0V8h2.05zm9.45 4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm-2.45 1a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0v-1h9.05z"
+              /></svg
+            >System Controls
+          </h2>
           <div class="control-group">
-            <label for="targetTempInput">Target Temperature (°C):</label>
+            <label
+              for="targetTempMinInput"
+              title="Minimum desired temperature (°C)."
+              >Target Temp Min (°C):</label
+            >
             <input
               type="number"
-              id="targetTempInput"
+              id="targetTempMinInput"
               step="0.1"
-              value="25.0"
+              value="24.0"
               min="4"
               max="50"
             />
-            <button onclick="setTargetTemperature()">Set Temp</button>
+            <label
+              for="targetTempMaxInput"
+              title="Maximum desired temperature (°C)."
+              >Target Temp Max (°C):</label
+            >
+            <input
+              type="number"
+              id="targetTempMaxInput"
+              step="0.1"
+              value="26.0"
+              min="4"
+              max="50"
+            />
+            <button
+              onclick="setTargetTemperatureRange()"
+              title="Set the desired temperature range for automatic control."
+            >
+              Set Temp Range
+            </button>
           </div>
           <div class="control-group">
-            <label for="readIntervalInput">Read Interval (ms):</label>
+            <label
+              for="readIntervalInput"
+              title="Set how often (in milliseconds) the device reads temperature."
+              >Read Interval (ms):</label
+            >
             <input
               type="number"
               id="readIntervalInput"
@@ -63,15 +232,25 @@
               min="1000"
               max="600000"
             />
-            <button onclick="setReadInterval()">Set Interval</button>
+            <button
+              onclick="setReadInterval()"
+              title="Apply the new read interval."
+            >
+              Set Interval
+            </button>
           </div>
           <div class="control-group mode-buttons">
-            <button onclick="sendCommandToMCU('MODE_AUTO')" id="btnModeAuto">
+            <button
+              onclick="sendCommandToMCU('MODE_AUTO')"
+              id="btnModeAuto"
+              title="Switch to automatic temperature control."
+            >
               Auto Mode
             </button>
             <button
               onclick="sendCommandToMCU('MODE_MANUAL')"
               id="btnModeManual"
+              title="Switch to manual operation."
             >
               Manual Mode
             </button>
@@ -81,53 +260,192 @@
             id="manualControls"
             style="display: none"
           >
-            <span>Manual Operation:</span>
-            <button onclick="sendCommandToMCU('MANUAL_HEAT')">Heat 🔥</button>
-            <button onclick="sendCommandToMCU('MANUAL_IDLE')">Idle 💤</button>
-            <button onclick="sendCommandToMCU('MANUAL_COOL')">Cool ❄️</button>
+            <span
+              title="Manually control heating, cooling, or set to idle. Only active in Manual Mode."
+              >Manual Operation:</span
+            >
+            <button
+              onclick="sendCommandToMCU('MANUAL_HEAT')"
+              title="Activate heating element."
+            >
+              Heat
+            </button>
+            <button
+              onclick="sendCommandToMCU('MANUAL_IDLE')"
+              title="Deactivate heating and cooling."
+            >
+              Idle
+            </button>
+            <button
+              onclick="sendCommandToMCU('MANUAL_COOL')"
+              title="Activate cooling element."
+            >
+              Cool
+            </button>
           </div>
         </section>
 
         <section class="panel chart-panel">
-          <h2><span class="icon">📈</span>Temperature Trend</h2>
+          <h2
+            title="Visual trend of current and target temperatures over time."
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              class="bi bi-graph-up"
+              viewBox="0 0 16 16"
+              style="margin-right: 5px"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M0 0h1v15h15v1H0V0Zm10 3.5a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 .5.5v4a.5.5 0 0 1-1 0V4.9l-3.613 4.417a.5.5 0 0 1-.74.037L7.06 6.767l-3.656 5.027a.5.5 0 0 1-.808-.588l4-5.5a.5.5 0 0 1 .758-.06l2.609 2.61L13.445 4H10.5a.5.5 0 0 1-.5-.5Z"
+              /></svg
+            >Temperature Trend
+          </h2>
           <div class="chart-controls">
-            Time Range:
+            <label
+              for="chartTimeRange"
+              title="Select the time window for the temperature chart."
+              >Time Range:</label
+            >
             <select id="chartTimeRange" onchange="updateChartDisplayRange()">
               <option value="live_1h" selected>Live (1 Hour)</option>
               <option value="live_6h">Live (6 Hours)</option>
-              <option value="day">Today</option>
-              <option value="3days">Last 3 Days</option>
-              <option value="week">Last 7 Days</option>
+              <option value="live_12h">Live (12 Hours)</option>
+              <option value="day_1">Today</option>
+              <option value="day_3">Last 3 Days</option>
+              <option value="day_7">Last 7 Days</option>
               <option value="all">All Data</option>
+              <option value="custom">Custom Range</option>
             </select>
-            <button onclick="loadHistoricalData()">Refresh Chart Data</button>
+            <div id="customDateRangePicker" style="display: none">
+              <label for="chartStartDate">Start:</label>
+              <input
+                type="datetime-local"
+                id="chartStartDate"
+                name="chartStartDate"
+              />
+              <label for="chartEndDate">End:</label>
+              <input
+                type="datetime-local"
+                id="chartEndDate"
+                name="chartEndDate"
+              />
+              <button
+                onclick="applyCustomDateRange()"
+                title="Apply the selected custom date range to the chart."
+              >
+                Apply
+              </button>
+            </div>
+            <button
+              onclick="loadHistoricalData(true)"
+              title="Force a refresh of the chart data from the server."
+            >
+              Refresh Chart
+            </button>
           </div>
           <div class="chart-wrapper">
             <canvas id="temperatureChart"></canvas>
           </div>
         </section>
 
+        <section class="panel chart-panel">
+          <h2
+            title="Trend of time taken for temperature to stabilize after setpoint changes."
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              class="bi bi-hourglass-split"
+              viewBox="0 0 16 16"
+              style="margin-right: 5px"
+            >
+              <path
+                d="M2.5 15a.5.5 0 1 1 0-1h1v-1a4.5 4.5 0 0 1 2.557-4.06c.29-.139.443-.377.443-.59v-.7c0-.213-.154-.451-.443-.59A4.5 4.5 0 0 1 3.5 3V2h-1a.5.5 0 0 1 0-1h11a.5.5 0 0 1 0 1h-1v1a4.5 4.5 0 0 1-2.557 4.06c-.29.139-.443.377-.443.59v.7c0 .213.154.451.443.59A4.5 4.5 0 0 1 12.5 13v1h1a.5.5 0 0 1 0 1h-11zm2-13v1c0 .537.12 1.045.337 1.5h6.326c.216-.455.337-.963.337-1.5V2h-7zm3 6.35c0 .701-.478 1.236-1.011 1.492A3.5 3.5 0 0 0 4.5 13s.866-1.299 3-1.48V8.35zm1 0v3.17c2.134.181 3 1.48 3 1.48a3.5 3.5 0 0 0-1.989-3.158C8.978 9.586 8.5 9.052 8.5 8.351z"
+              /></svg
+            >Equalization Trend
+          </h2>
+          <div class="chart-controls">
+            <label
+              for="eqChartTimeRange"
+              title="Select the time window for the equalization chart."
+              >Time Range:</label
+            >
+            <select
+              id="eqChartTimeRange"
+              onchange="updateEqualizationChartDisplayRange()"
+            >
+              <option value="day_7" selected>Last 7 Days</option>
+              <option value="day_30">Last 30 Days</option>
+              <option value="all">All Data</option>
+              <option value="custom_eq">Custom Range</option>
+            </select>
+            <div id="customEqDateRangePicker" style="display: none">
+              <label for="eqChartStartDate">Start:</label>
+              <input
+                type="datetime-local"
+                id="eqChartStartDate"
+                name="eqChartStartDate"
+              />
+              <label for="eqChartEndDate">End:</label>
+              <input
+                type="datetime-local"
+                id="eqChartEndDate"
+                name="eqChartEndDate"
+              />
+              <button
+                onclick="applyCustomEqDateRange()"
+                title="Apply selected custom date range to equalization chart."
+              >
+                Apply
+              </button>
+            </div>
+            <button
+              onclick="loadEqualizationData(true)"
+              title="Force a refresh of the equalization chart data."
+            >
+              Refresh Chart
+            </button>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="equalizationChart"></canvas>
+          </div>
+        </section>
+
         <section class="panel log-panel">
-          <h2><span class="icon">📋</span>Device Logs & Messages</h2>
+          <h2
+            title="Raw messages and logs from the FermaSense device and backend system."
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              fill="currentColor"
+              class="bi bi-terminal-fill"
+              viewBox="0 0 16 16"
+              style="margin-right: 5px"
+            >
+              <path
+                d="M0 3a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3zm9.5 5.5h-3a.5.5 0 0 0 0 1h3a.5.5 0 0 0 0-1zm-6.354-.354a.5.5 0 1 0 .708.708l2-2a.5.5 0 0 0 0-.708l-2-2a.5.5 0 1 0-.708.708L4.793 6.5 3.146 8.146z"
+              /></svg
+            >Device Logs & Messages
+          </h2>
           <div id="mcuLogOutput" class="log-output"></div>
         </section>
-
-        <section class="panel export-panel">
-          <h2><span class="icon">💾</span>Data Export</h2>
-          <button onclick="downloadLog('main')">Download Main Log (CSV)</button>
-          <button onclick="downloadLog('equalization')">
-            Download Equalization Log (CSV)
-          </button>
-        </section>
       </main>
-
-      <footer class="dashboard-footer">
-        <p>
-          &copy; <span id="currentYear"></span> FermaSense Project. All rights
-          reserved.
-        </p>
-      </footer>
     </div>
+
+    <footer class="dashboard-footer">
+      <p>
+        &copy; <span id="currentYear"></span> FermaSense Project. All rights
+        reserved.
+      </p>
+    </footer>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
   </body>

@@ -1,49 +1,44 @@
 #include <OneWire.h>
-#include <DallasTemperature.h> // Preferred library for DS18B20
+#include <DallasTemperature.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
 // --- Pin Definitions ---
-#define ONE_WIRE_BUS_PIN 2 // DS18B20 Data Pin
-#define HEAT_PIN 3         // Digital pin for Heating (e.g., controls a relay/MOSFET for TEC)
-#define COOL_PIN 4         // Digital pin for Cooling (e.g., controls a relay/MOSFET for TEC)
-                           // For TEC1-12706:
-                           // Heating: HEAT_PIN=HIGH, COOL_PIN=LOW (if polarity is set for this)
-                           // Cooling: HEAT_PIN=LOW, COOL_PIN=HIGH (if polarity is set for this)
-                           // Idle:    HEAT_PIN=LOW, COOL_PIN=LOW
+#define ONE_WIRE_BUS_PIN 2
+#define HEAT_PIN 3
+#define COOL_PIN 4
 
 // --- Temperature Sensor Setup ---
 OneWire oneWire(ONE_WIRE_BUS_PIN);
 DallasTemperature sensors(&oneWire);
-DeviceAddress sensorDeviceAddress; // Stores sensor address
+DeviceAddress sensorDeviceAddress;
 
 // --- LCD Setup ---
-// Note: If your LCD address is different, change 0x27. Common addresses are 0x27 or 0x3F.
-LiquidCrystal_I2C lcd(0x27, 16, 2);
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Address 0x27, 16 chars, 2 lines
 
 // --- Control Variables ---
-float currentTemperature = -127.0; // Initial invalid value, DS18B20 returns -127 on error
-float setTemperature = 25.0;       // Default desired temperature (Celsius)
-const float TEMP_HYSTERESIS = 0.5; // Hysteresis in Celsius to prevent rapid switching
-                                   // (e.g., if setTemp is 25, heat below 24.5, cool above 25.5)
+float currentTemperature = -127.0;
+float setTemperatureMin = 24.0;    // Default minimum desired temperature (Celsius)
+float setTemperatureMax = 26.0;    // Default maximum desired temperature (Celsius)
+const float TEMP_HYSTERESIS = 0.25; // Hysteresis for decision making relative to range boundaries
 
-// TEC1-12706 Safe Operating Range for Fermentation (adjust as needed)
-// These are for the *target fermentation temperature*, not the absolute limits of the TEC.
-const float MIN_SETTABLE_TEMP = 4.0;  // Minimum safe settable temperature for product
-const float MAX_SETTABLE_TEMP = 50.0; // Maximum safe settable temperature for product
+const float MIN_SETTABLE_TEMP = 4.0;
+const float MAX_SETTABLE_TEMP = 50.0;
 
 enum ControlState { IDLE, HEATING, COOLING };
 ControlState currentControlState = IDLE;
-ControlState manualOverrideState = IDLE; // Used when in manual mode
+ControlState manualOverrideState = IDLE;
 bool manualModeActive = false;
 
 unsigned long lastTempReadTime = 0;
-unsigned long temperatureReadInterval = 5000; // Default: check temperature every 5 seconds (ms)
+unsigned long temperatureReadInterval = 5000; // ms
 
 // For recording equalization time
 unsigned long setpointChangedTimestamp = 0;
 bool isEqualizing = false;
-float lastSetpointBeforeChange = 0.0;
+float lastSetpointMinBeforeChange = 0.0;
+float lastSetpointMaxBeforeChange = 0.0;
+
 
 // --- Function Prototypes ---
 void readTemperatureSensor();
@@ -51,64 +46,61 @@ void updateControlLogic();
 void applyControlState(ControlState targetState);
 void updateLcdDisplay();
 void processSerialCommands();
-void startEqualizationTiming();
+void startEqualizationTiming(float oldMin, float oldMax, float newMin, float newMax);
 void checkAndLogEqualization();
 
 void setup() {
-    Serial.begin(115200); // Use a higher baud rate for faster data transfer
+    Serial.begin(115200);
 
     pinMode(HEAT_PIN, OUTPUT);
     pinMode(COOL_PIN, OUTPUT);
-    applyControlState(IDLE); // Start with TEC off
+    applyControlState(IDLE);
 
-    // Initialize LCD
     lcd.init();
     lcd.backlight();
     lcd.setCursor(0, 0);
     lcd.print("FermaSense Boot");
     delay(1000);
 
-    // Initialize Temperature Sensor
     sensors.begin();
     if (!sensors.getAddress(sensorDeviceAddress, 0)) {
         Serial.println("ERROR,DS18B20_NOT_FOUND");
         lcd.clear();
         lcd.print("Sensor Error!");
-        while (true); // Halt execution
+        while (true); // Halt
     }
-    sensors.setResolution(sensorDeviceAddress, 12); // Set resolution (9, 10, 11, or 12 bits)
-    sensors.setWaitForConversion(false); // Use non-blocking mode
-    sensors.requestTemperaturesByIndex(0); // Initial request
+    sensors.setResolution(sensorDeviceAddress, 12);
+    sensors.setWaitForConversion(false);
+    sensors.requestTemperaturesByIndex(0);
     lastTempReadTime = millis();
-    setpointChangedTimestamp = millis(); // Initialize
+    setpointChangedTimestamp = millis();
 
     Serial.println("INFO,FermaSense Ready");
-    Serial.println("INFO,Commands: SET_TEMP=<value>, SET_FREQ=<ms>, MODE_AUTO, MODE_MANUAL, MANUAL_HEAT, MANUAL_COOL, MANUAL_IDLE, GET_STATUS");
+    Serial.println("INFO,Commands: SET_TEMP_RANGE=<min>,<max> | SET_FREQ=<ms> | MODE_AUTO | MODE_MANUAL | MANUAL_HEAT/COOL/IDLE | GET_STATUS");
     updateLcdDisplay();
 }
 
 void loop() {
     unsigned long currentTime = millis();
 
-    // Process any incoming serial commands
     processSerialCommands();
 
-    // Read temperature at the specified interval
     if (currentTime - lastTempReadTime >= temperatureReadInterval) {
-        readTemperatureSensor(); // This also requests the next reading
+        readTemperatureSensor();
         lastTempReadTime = currentTime;
 
-        // After a new temperature reading, update control logic and LCD
         updateControlLogic();
         updateLcdDisplay();
 
-        // Send data packet to the web dashboard via Serial
+        // DATA,Timestamp_s,CurrentTemp,SetTempMin,SetTempMax,State,Mode
         Serial.print("DATA,");
-        Serial.print(currentTime / 1000.0, 2); // Timestamp in seconds
+        Serial.print(currentTime / 1000.0, 2);
         Serial.print(",");
         Serial.print(currentTemperature, 2);
         Serial.print(",");
-        Serial.print(setTemperature, 2);
+        Serial.print(setTemperatureMin, 2);
+        Serial.print(",");
+        Serial.print(setTemperatureMax, 2);
         Serial.print(",");
         String stateStr = "IDLE";
         if (currentControlState == HEATING) stateStr = "HEATING";
@@ -122,57 +114,107 @@ void loop() {
 }
 
 void readTemperatureSensor() {
-    if (sensors.isConversionComplete()) { // Check if conversion is done
+    if (sensors.isConversionComplete()) {
         float tempC = sensors.getTempCByIndex(0);
-        if (tempC == DEVICE_DISCONNECTED_C || tempC < -50 || tempC > 120) { // Basic validity check
+        if (tempC == DEVICE_DISCONNECTED_C || tempC < -50 || tempC > 120) {
             Serial.println("ERROR,TEMP_SENSOR_READ_FAILED");
-            currentTemperature = -127.0; // Indicate error
+            currentTemperature = -127.0;
         } else {
             currentTemperature = tempC;
         }
-        sensors.requestTemperaturesByIndex(0); // Request next conversion
+        sensors.requestTemperaturesByIndex(0);
     }
-    // If not complete, we'll get it on the next cycle where it is complete.
 }
 
 void updateControlLogic() {
-    if (currentTemperature == -127.0) { // If temperature reading is invalid
-        applyControlState(IDLE); // Go to IDLE for safety
+    if (currentTemperature == -127.0) {
+        applyControlState(IDLE);
         return;
     }
 
     if (manualModeActive) {
         applyControlState(manualOverrideState);
     } else { // Automatic mode
-        if (currentTemperature < setTemperature - TEMP_HYSTERESIS) {
+        // If temp is below the lower bound of the range (minus hysteresis), heat.
+        if (currentTemperature < setTemperatureMin - TEMP_HYSTERESIS) {
             applyControlState(HEATING);
-        } else if (currentTemperature > setTemperature + TEMP_HYSTERESIS) {
+        // If temp is above the upper bound of the range (plus hysteresis), cool.
+        } else if (currentTemperature > setTemperatureMax + TEMP_HYSTERESIS) {
             applyControlState(COOLING);
-        } else {
-            applyControlState(IDLE);
+        // If temp is within the desired range (inclusive of hysteresis boundaries for stability)
+        } else if (currentTemperature >= setTemperatureMin && currentTemperature <= setTemperatureMax) {
+             applyControlState(IDLE);
         }
+        // If outside the range but within hysteresis, do nothing to prevent rapid switching
+        // e.g. if range is 24-26, hysteresis 0.25.
+        // Heat if < 23.75. Cool if > 26.25. Idle if 24.00 - 26.00.
+        // If 23.80 and was heating, continue heating until >= 24.00.
+        // If 26.20 and was cooling, continue cooling until <= 26.00.
+        // This logic is handled by only changing state if crossing the outer hysteresis boundaries.
+        // And then changing to IDLE once *inside* the setpoint range.
     }
 }
 
 void applyControlState(ControlState targetState) {
-    if (currentControlState == targetState && !(manualModeActive && targetState != manualOverrideState) ) return; // No change needed unless manual override changes
+    // Only change if the target state is different from current state
+    // OR if in manual mode and the manual override state is different from current applied state.
+    if (currentControlState == targetState && !(manualModeActive && targetState != manualOverrideState && currentControlState != manualOverrideState)) {
+        // If manual mode is active and the target state (from auto logic) is different from the manual override,
+        // but the current *applied* state IS the manual override, then no change is needed from this call.
+        // The manual override takes precedence.
+        // However, if manual mode is active and a new manual command comes (manualOverrideState changes),
+        // then currentControlState should be updated to manualOverrideState.
+        if(manualModeActive && currentControlState != manualOverrideState) {
+             // This case handles when switching to manual or changing manual command
+        } else {
+            return; // No change needed
+        }
+    }
 
-    currentControlState = targetState;
-    switch (currentControlState) {
+
+    currentControlState = targetState; // This will be overridden by manualOverrideState if manualModeActive in updateControlLogic
+
+    // Actual application of state to pins
+    ControlState stateToApply = manualModeActive ? manualOverrideState : currentControlState;
+
+    // Re-check if actual pin state needs to change based on stateToApply
+    // This is a bit redundant if applyControlState is only called from updateControlLogic
+    // but good for direct calls if any.
+    // Let's simplify: assume updateControlLogic sets currentControlState (or manualOverrideState) correctly.
+    // This function just applies that.
+
+    switch (stateToApply) {
         case IDLE:
+            if (digitalRead(HEAT_PIN) == HIGH || digitalRead(COOL_PIN) == HIGH) { // Only print if changing
+                Serial.println("INFO,TEC switched to IDLE");
+            }
             digitalWrite(HEAT_PIN, LOW);
             digitalWrite(COOL_PIN, LOW);
             break;
         case HEATING:
-            digitalWrite(COOL_PIN, LOW); // Ensure cooling is off
+            if (digitalRead(HEAT_PIN) == LOW) { // Only print if changing
+                 Serial.println("INFO,TEC switched to HEATING");
+            }
+            digitalWrite(COOL_PIN, LOW);
             digitalWrite(HEAT_PIN, HIGH);
             break;
         case COOLING:
-            digitalWrite(HEAT_PIN, LOW);   // Ensure heating is off
+            if (digitalRead(COOL_PIN) == LOW) { // Only print if changing
+                 Serial.println("INFO,TEC switched to COOLING");
+            }
+            digitalWrite(HEAT_PIN, LOW);
             digitalWrite(COOL_PIN, HIGH);
             break;
     }
+    // After applying, ensure currentControlState reflects the applied state
+    // This is tricky because currentControlState is used for auto logic.
+    // Let's keep currentControlState as what the *auto* logic would do,
+    // and use stateToApply for actual pin setting.
+    // The LCD and serial DATA should report the *actual* state (stateToApply).
+    // For simplicity, let's assume currentControlState reflects the *actual* applied state.
+    // If manualModeActive, currentControlState will be set to manualOverrideState by updateControlLogic.
 }
+
 
 void updateLcdDisplay() {
     lcd.clear();
@@ -181,16 +223,18 @@ void updateLcdDisplay() {
     if (manualModeActive) {
         lcd.print("Manual:");
     } else {
-        lcd.print("Auto:");
+        lcd.print("Auto:  "); // Extra space for alignment
     }
-    lcd.setCursor(7, 0); // Position for state
-    switch (currentControlState) {
-        case IDLE:    lcd.print("Idle   "); break; // Extra spaces to clear previous text
+    
+    ControlState displayedState = manualModeActive ? manualOverrideState : currentControlState;
+    lcd.setCursor(7, 0);
+    switch (displayedState) {
+        case IDLE:    lcd.print("Idle   "); break;
         case HEATING: lcd.print("Heating"); break;
         case COOLING: lcd.print("Cooling"); break;
     }
 
-    // Row 1: Temperatures
+    // Row 1: Temperatures T:curr S:min-max
     lcd.setCursor(0, 1);
     lcd.print("T:");
     if (currentTemperature == -127.0) {
@@ -199,38 +243,49 @@ void updateLcdDisplay() {
         lcd.print(currentTemperature, 1);
     }
     lcd.print((char)223); // Degree symbol
-    lcd.print("C S:");
-    lcd.print(setTemperature, 1);
-    lcd.print((char)223);
-    lcd.print("C");
+    
+    lcd.print(" S:");
+    lcd.print(setTemperatureMin, 0); // Show min int
+    lcd.print("-");
+    lcd.print(setTemperatureMax, 0); // Show max int
+    // lcd.print((char)223); // Degree symbol for range might be too much
 }
 
-void startEqualizationTiming() {
-    // Start timing if the current temperature is meaningfully different from the new setpoint
-    if (abs(currentTemperature - setTemperature) > TEMP_HYSTERESIS && currentTemperature != -127.0) {
+void startEqualizationTiming(float oldMin, float oldMax, float newMin, float newMax) {
+    // Start timing if current temp is outside the new range, or if the range itself significantly changed
+    bool rangeChangedSignificantly = abs(oldMin - newMin) > 0.1 || abs(oldMax - newMax) > 0.1;
+    bool outsideNewRange = (currentTemperature < newMin - TEMP_HYSTERESIS || currentTemperature > newMax + TEMP_HYSTERESIS);
+
+    if ((rangeChangedSignificantly || outsideNewRange) && currentTemperature != -127.0) {
         setpointChangedTimestamp = millis();
         isEqualizing = true;
-        lastSetpointBeforeChange = setTemperature; // Record what we are trying to achieve
-        Serial.print("INFO,Equalization timer started for setpoint: ");
-        Serial.println(setTemperature);
+        lastSetpointMinBeforeChange = newMin;
+        lastSetpointMaxBeforeChange = newMax;
+        Serial.print("INFO,Equalization timer started for setpoint range: ");
+        Serial.print(newMin, 1); Serial.print("-"); Serial.println(newMax, 1);
     } else {
-        isEqualizing = false; // Already at or very close to setpoint
+        isEqualizing = false; // Already within or very close to new setpoint range
     }
 }
 
 void checkAndLogEqualization() {
     if (isEqualizing) {
-        // Check if temperature is now within the hysteresis band of the target setpoint
-        // and the system has settled (is IDLE in auto mode, or matching manual state)
-        bool conditionsMet = (abs(currentTemperature - lastSetpointBeforeChange) <= TEMP_HYSTERESIS);
-        bool systemSettled = (!manualModeActive && currentControlState == IDLE) ||
-                             (manualModeActive && currentControlState == manualOverrideState && manualOverrideState == IDLE);
+        // Check if temperature is now within the target range
+        bool withinTargetRange = (currentTemperature >= lastSetpointMinBeforeChange && currentTemperature <= lastSetpointMaxBeforeChange);
+        
+        // System settled: in auto mode and IDLE, or manual mode and manual state is IDLE
+        ControlState actualCurrentState = manualModeActive ? manualOverrideState : currentControlState;
+        bool systemSettled = (!manualModeActive && actualCurrentState == IDLE) ||
+                             (manualModeActive && actualCurrentState == IDLE);
 
 
-        if (conditionsMet && systemSettled && currentTemperature != -127.0) {
+        if (withinTargetRange && systemSettled && currentTemperature != -127.0) {
             unsigned long equalizationDurationMs = millis() - setpointChangedTimestamp;
+            // EQUALIZED,TargetTempMin,TargetTempMax,Duration_s
             Serial.print("EQUALIZED,");
-            Serial.print(lastSetpointBeforeChange, 2); // The setpoint we were aiming for
+            Serial.print(lastSetpointMinBeforeChange, 2);
+            Serial.print(",");
+            Serial.print(lastSetpointMaxBeforeChange, 2);
             Serial.print(",");
             Serial.println(equalizationDurationMs / 1000.0, 2); // Duration in seconds
             isEqualizing = false;
@@ -244,77 +299,87 @@ void processSerialCommands() {
         command.trim();
         Serial.print("CMD_RECV,"); Serial.println(command);
 
-        if (command.startsWith("SET_TEMP=")) {
-            float newSetTemp = command.substring(9).toFloat();
-            if (newSetTemp >= MIN_SETTABLE_TEMP && newSetTemp <= MAX_SETTABLE_TEMP) {
-                if (abs(setTemperature - newSetTemp) > 0.01) { // Check if it's a real change
-                    setTemperature = newSetTemp;
-                    Serial.print("INFO,Setpoint changed to: "); Serial.println(setTemperature);
-                    if (!manualModeActive) { // Only start auto-equalization timer if in auto mode
-                        startEqualizationTiming();
-                    } else {
-                        isEqualizing = false; // If in manual, setpoint change doesn't trigger timed equalization
+        if (command.startsWith("SET_TEMP_RANGE=")) {
+            String params = command.substring(15); // Length of "SET_TEMP_RANGE="
+            int commaIndex = params.indexOf(',');
+            if (commaIndex != -1) {
+                float newSetMin = params.substring(0, commaIndex).toFloat();
+                float newSetMax = params.substring(commaIndex + 1).toFloat();
+
+                if (newSetMin >= MIN_SETTABLE_TEMP && newSetMax <= MAX_SETTABLE_TEMP && newSetMin <= newSetMax) {
+                    if (abs(setTemperatureMin - newSetMin) > 0.01 || abs(setTemperatureMax - newSetMax) > 0.01) {
+                        float oldMin = setTemperatureMin;
+                        float oldMax = setTemperatureMax;
+                        setTemperatureMin = newSetMin;
+                        setTemperatureMax = newSetMax;
+                        Serial.print("INFO,Setpoint range changed to: ");
+                        Serial.print(setTemperatureMin, 1); Serial.print("-"); Serial.println(setTemperatureMax, 1);
+                        if (!manualModeActive) {
+                            startEqualizationTiming(oldMin, oldMax, newSetMin, newSetMax);
+                        } else {
+                            isEqualizing = false;
+                        }
                     }
+                } else {
+                    Serial.print("ERROR,SET_TEMP_RANGE_INVALID. Min: "); Serial.print(MIN_SETTABLE_TEMP);
+                    Serial.print(", Max: "); Serial.print(MAX_SETTABLE_TEMP);
+                    Serial.println(", Min <= Max required.");
                 }
             } else {
-                Serial.print("ERROR,SET_TEMP_OUT_OF_RANGE (");
-                Serial.print(MIN_SETTABLE_TEMP); Serial.print("-"); Serial.print(MAX_SETTABLE_TEMP);
-                Serial.println(")");
+                 Serial.println("ERROR,SET_TEMP_RANGE_FORMAT. Use: <min>,<max>");
             }
         } else if (command.startsWith("SET_FREQ=")) {
-            long newFreq = command.substring(9).toInt(); // Use long for safety
-            if (newFreq >= 1000 && newFreq <= 600000) { // Min 1s, Max 10min
+            long newFreq = command.substring(9).toInt();
+            if (newFreq >= 1000 && newFreq <= 600000) {
                 temperatureReadInterval = newFreq;
                 Serial.print("INFO,Temp. read interval set to: "); Serial.print(temperatureReadInterval); Serial.println(" ms");
             } else {
                 Serial.println("ERROR,SET_FREQ_OUT_OF_RANGE (1000-600000ms)");
             }
         } else if (command.equals("MODE_AUTO")) {
-            if (manualModeActive) { // Only act if changing mode
+            if (manualModeActive) {
                 manualModeActive = false;
-                isEqualizing = false; // Reset equalization state
-                startEqualizationTiming(); // See if we need to equalize to current setpoint
+                isEqualizing = false; 
+                startEqualizationTiming(setTemperatureMin, setTemperatureMax, setTemperatureMin, setTemperatureMax); // Check if equalization needed for current range
                 Serial.println("INFO,Mode changed to AUTO");
             }
         } else if (command.equals("MODE_MANUAL")) {
-            if (!manualModeActive) { // Only act if changing mode
+            if (!manualModeActive) {
                 manualModeActive = true;
-                manualOverrideState = IDLE; // Default to IDLE when entering manual
-                isEqualizing = false; // Stop any auto equalization timing
+                manualOverrideState = IDLE; // Default to IDLE
+                isEqualizing = false;
                 Serial.println("INFO,Mode changed to MANUAL. System IDLE. Use MANUAL_HEAT/COOL/IDLE.");
             }
         } else if (command.equals("MANUAL_HEAT")) {
             if (manualModeActive) {
                 manualOverrideState = HEATING;
                 Serial.println("INFO,Manual control: HEATING");
-            } else {
-                Serial.println("ERROR,Command only valid in MANUAL mode.");
-            }
+            } else { Serial.println("ERROR,Command only valid in MANUAL mode."); }
         } else if (command.equals("MANUAL_COOL")) {
             if (manualModeActive) {
                 manualOverrideState = COOLING;
                 Serial.println("INFO,Manual control: COOLING");
-            } else {
-                Serial.println("ERROR,Command only valid in MANUAL mode.");
-            }
+            } else { Serial.println("ERROR,Command only valid in MANUAL mode."); }
         } else if (command.equals("MANUAL_IDLE")) {
             if (manualModeActive) {
                 manualOverrideState = IDLE;
                 Serial.println("INFO,Manual control: IDLE");
-            } else {
-                Serial.println("ERROR,Command only valid in MANUAL mode.");
-            }
+            } else { Serial.println("ERROR,Command only valid in MANUAL mode."); }
         } else if (command.equals("GET_STATUS")) {
+            // STATUS,mcu_time,currT,setT_min,setT_max,State,Mode,Freq,isEq,eqTimestamp
             Serial.print("STATUS,");
-            Serial.print(millis() / 1000.0, 2);
+            Serial.print(millis() / 1000.0, 2); // MCU Uptime
             Serial.print(",");
             Serial.print(currentTemperature, 2);
             Serial.print(",");
-            Serial.print(setTemperature, 2);
+            Serial.print(setTemperatureMin, 2);
             Serial.print(",");
+            Serial.print(setTemperatureMax, 2);
+            Serial.print(",");
+            ControlState actualState = manualModeActive ? manualOverrideState : currentControlState;
             String stateStr = "IDLE";
-            if (currentControlState == HEATING) stateStr = "HEATING";
-            else if (currentControlState == COOLING) stateStr = "COOLING";
+            if (actualState == HEATING) stateStr = "HEATING";
+            else if (actualState == COOLING) stateStr = "COOLING";
             Serial.print(stateStr);
             Serial.print(",");
             Serial.print(manualModeActive ? "MANUAL" : "AUTO");
@@ -329,8 +394,7 @@ void processSerialCommands() {
             Serial.print("ERROR,UNKNOWN_COMMAND: "); Serial.println(command);
         }
 
-        // Immediately update logic and display after a command that might change state
-        updateControlLogic();
-        updateLcdDisplay();
+        updateControlLogic(); // Re-evaluate control after command
+        updateLcdDisplay();   // Update LCD
     }
 }
