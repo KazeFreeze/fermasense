@@ -1,2 +1,6 @@
 fermasense_dashboard/venv
 fermasense_dashboard/__pycache__/
+build/
+dist/
+desktop.ini
+FermaSenseApp.spec
