@@ -1,0 +1,303 @@
+/* static/css/style.css */
+:root {
+  --primary-color: #3498db; /* Bright Blue */
+  --secondary-color: #2c3e50; /* Dark Blue-Gray */
+  --accent-color: #e67e22; /* Orange for heating */
+  --cool-color: #1abc9c; /* Turquoise for cooling */
+  --idle-color: #95a5a6; /* Gray for idle */
+  --bg-color: #ecf0f1; /* Light Gray Background */
+  --panel-bg-color: #ffffff;
+  --text-color: #333333;
+  --light-text-color: #f8f9fa;
+  --border-color: #bdc3c7;
+  --success-color: #2ecc71;
+  --error-color: #e74c3c;
+  --font-family: "Roboto", "Segoe UI", sans-serif;
+}
+
+body {
+  font-family: var(--font-family);
+  margin: 0;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  line-height: 1.6;
+  font-size: 16px;
+}
+
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.dashboard-header {
+  background-color: var(--secondary-color);
+  color: var(--light-text-color);
+  padding: 20px 30px;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-header h1 {
+  margin: 0;
+  font-size: 2.2em;
+  font-weight: 500;
+}
+
+.dashboard-header p {
+  margin: 5px 0 0;
+  font-size: 1em;
+  opacity: 0.9;
+}
+
+.dashboard-main {
+  flex-grow: 1;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 20px;
+}
+
+.panel {
+  background-color: var(--panel-bg-color);
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--border-color);
+}
+
+.panel h2 {
+  color: var(--secondary-color);
+  margin-top: 0;
+  font-size: 1.4em;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--bg-color);
+  display: flex;
+  align-items: center;
+}
+.panel h2 .icon {
+  margin-right: 10px;
+  font-size: 1.2em;
+}
+
+/* Status Panel */
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  font-size: 0.95em;
+}
+.status-grid div {
+  padding: 5px 0;
+}
+.status-grid strong {
+  color: var(--primary-color);
+  font-weight: 500;
+}
+.state-display strong {
+  margin-right: 8px;
+}
+.animation-icon {
+  display: inline-block;
+  font-size: 1.2em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: white;
+  min-width: 25px;
+  text-align: center;
+}
+.state-heating .animation-icon {
+  background-color: var(--accent-color);
+  animation: pulse 1s infinite;
+}
+.state-cooling .animation-icon {
+  background-color: var(--cool-color);
+  animation: pulse 1s infinite;
+}
+.state-idle .animation-icon {
+  background-color: var(--idle-color);
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.equalization-info {
+  margin-top: 15px;
+  font-size: 0.9em;
+  color: var(--text-color);
+}
+.equalization-info span {
+  font-weight: 500;
+  color: var(--primary-color);
+}
+
+/* Control Panel */
+.control-group {
+  margin-bottom: 15px;
+}
+.control-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  font-size: 0.9em;
+}
+.control-group input[type="number"] {
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  margin-right: 10px;
+  width: 120px; /* Adjust as needed */
+}
+.control-group button,
+.export-panel button {
+  padding: 8px 15px;
+  background-color: var(--primary-color);
+  color: var(--light-text-color);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  font-size: 0.9em;
+}
+.control-group button:hover,
+.export-panel button:hover {
+  background-color: #2980b9; /* Darker primary */
+}
+.mode-buttons button.active {
+  background-color: var(--secondary-color);
+  font-weight: bold;
+}
+.manual-op-buttons button {
+  margin: 5px;
+}
+.manual-op-buttons button:nth-child(1) {
+  background-color: var(--accent-color);
+} /* Heat */
+.manual-op-buttons button:nth-child(1):hover {
+  background-color: #d35400;
+}
+.manual-op-buttons button:nth-child(2) {
+  background-color: var(--idle-color);
+} /* Idle */
+.manual-op-buttons button:nth-child(2):hover {
+  background-color: #7f8c8d;
+}
+.manual-op-buttons button:nth-child(3) {
+  background-color: var(--cool-color);
+} /* Cool */
+.manual-op-buttons button:nth-child(3):hover {
+  background-color: #16a085;
+}
+
+/* Chart Panel */
+.chart-panel {
+  grid-column: 1 / -1;
+} /* Span full width */
+.chart-wrapper {
+  position: relative;
+  height: 400px; /* Adjust as needed */
+  margin-top: 15px;
+}
+#temperatureChart {
+  width: 100%;
+  height: 100%;
+}
+.chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9em;
+}
+.chart-controls select,
+.chart-controls button {
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--panel-bg-color);
+}
+
+/* Log Panel */
+.log-panel {
+  grid-column: 1 / -1;
+} /* Span full width */
+.log-output {
+  height: 150px;
+  overflow-y: auto;
+  border: 1px solid var(--bg-color);
+  padding: 10px;
+  font-size: 0.85em;
+  background-color: #fdfdfd;
+  border-radius: 4px;
+}
+.log-output div {
+  padding: 3px 0;
+  border-bottom: 1px dotted #eee;
+  word-break: break-all;
+}
+.log-output div:last-child {
+  border-bottom: none;
+}
+.log-output .log-info {
+  color: var(--text-color);
+}
+.log-output .log-error {
+  color: var(--error-color);
+  font-weight: 500;
+}
+.log-output .log-cmd_sent {
+  color: var(--primary-color);
+  font-style: italic;
+}
+.log-output .log-mcu_unknown {
+  color: #777;
+}
+
+/* Export Panel */
+.export-panel button {
+  background-color: var(--success-color);
+  margin-right: 10px;
+}
+.export-panel button:hover {
+  background-color: #27ae60;
+}
+
+.dashboard-footer {
+  background-color: var(--secondary-color);
+  color: var(--light-text-color);
+  text-align: center;
+  padding: 15px;
+  font-size: 0.85em;
+  opacity: 0.9;
+  margin-top: auto; /* Pushes footer to bottom if content is short */
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .dashboard-main {
+    grid-template-columns: 1fr; /* Stack panels on smaller screens */
+  }
+  .chart-panel,
+  .log-panel {
+    grid-column: auto; /* Reset span */
+  }
+  .control-group input[type="number"] {
+    width: auto; /* Allow natural width */
+    flex-grow: 1;
+  }
+  .control-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .control-group label {
+    flex-basis: 100%;
+  }
+}

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FermaSense: Smart Fermentation Monitor</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+  </head>
+  <body>
+    <div class="dashboard-container">
+      <header class="dashboard-header">
+        <h1>FermaSense</h1>
+        <p>Smart Fermentation Monitor and Control System</p>
+      </header>
+
+      <main class="dashboard-main">
+        <section class="panel status-panel">
+          <h2><span class="icon">📊</span>Current Status</h2>
+          <div class="status-grid">
+            <div>MCU Time: <strong id="mcuTime">--:--:--</strong> s</div>
+            <div>Temperature: <strong id="currentTemp">--.- °C</strong></div>
+            <div>Set Temp: <strong id="setTemp">--.- °C</strong></div>
+            <div>Mode: <strong id="currentMode">-----</strong></div>
+            <div class="state-display">
+              State: <strong id="currentState">-----</strong>
+              <span id="stateAnimation" class="animation-icon"></span>
+            </div>
+            <div>Read Interval: <strong id="readInterval">---- ms</strong></div>
+          </div>
+          <div class="equalization-info">
+            Last Equalization: <span id="lastEqTime">N/A</span>
+          </div>
+        </section>
+
+        <section class="panel control-panel">
+          <h2><span class="icon">⚙️</span>System Controls</h2>
+          <div class="control-group">
+            <label for="targetTempInput">Target Temperature (°C):</label>
+            <input
+              type="number"
+              id="targetTempInput"
+              step="0.1"
+              value="25.0"
+              min="4"
+              max="50"
+            />
+            <button onclick="setTargetTemperature()">Set Temp</button>
+          </div>
+          <div class="control-group">
+            <label for="readIntervalInput">Read Interval (ms):</label>
+            <input
+              type="number"
+              id="readIntervalInput"
+              step="1000"
+              value="5000"
+              min="1000"
+              max="600000"
+            />
+            <button onclick="setReadInterval()">Set Interval</button>
+          </div>
+          <div class="control-group mode-buttons">
+            <button onclick="sendCommandToMCU('MODE_AUTO')" id="btnModeAuto">
+              Auto Mode
+            </button>
+            <button
+              onclick="sendCommandToMCU('MODE_MANUAL')"
+              id="btnModeManual"
+            >
+              Manual Mode
+            </button>
+          </div>
+          <div
+            class="control-group manual-op-buttons"
+            id="manualControls"
+            style="display: none"
+          >
+            <span>Manual Operation:</span>
+            <button onclick="sendCommandToMCU('MANUAL_HEAT')">Heat 🔥</button>
+            <button onclick="sendCommandToMCU('MANUAL_IDLE')">Idle 💤</button>
+            <button onclick="sendCommandToMCU('MANUAL_COOL')">Cool ❄️</button>
+          </div>
+        </section>
+
+        <section class="panel chart-panel">
+          <h2><span class="icon">📈</span>Temperature Trend</h2>
+          <div class="chart-controls">
+            Time Range:
+            <select id="chartTimeRange" onchange="updateChartDisplayRange()">
+              <option value="live_1h" selected>Live (1 Hour)</option>
+              <option value="live_6h">Live (6 Hours)</option>
+              <option value="day">Today</option>
+              <option value="3days">Last 3 Days</option>
+              <option value="week">Last 7 Days</option>
+              <option value="all">All Data</option>
+            </select>
+            <button onclick="loadHistoricalData()">Refresh Chart Data</button>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="temperatureChart"></canvas>
+          </div>
+        </section>
+
+        <section class="panel log-panel">
+          <h2><span class="icon">📋</span>Device Logs & Messages</h2>
+          <div id="mcuLogOutput" class="log-output"></div>
+        </section>
+
+        <section class="panel export-panel">
+          <h2><span class="icon">💾</span>Data Export</h2>
+          <button onclick="downloadLog('main')">Download Main Log (CSV)</button>
+          <button onclick="downloadLog('equalization')">
+            Download Equalization Log (CSV)
+          </button>
+        </section>
+      </main>
+
+      <footer class="dashboard-footer">
+        <p>
+          &copy; <span id="currentYear"></span> FermaSense Project. All rights
+          reserved.
+        </p>
+      </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  </body>
+</html>
