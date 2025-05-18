@@ -1,0 +1,6 @@
+Flask
+Flask-SocketIO
+pyserial
+python-engineio
+python-socketio
+Werkzeug
