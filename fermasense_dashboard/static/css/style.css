@@ -266,11 +266,23 @@ body {
 
 /* Chart Panel */
 .chart-panel {
-  grid-column: span 2; /* Default to span 2 columns if possible */
+  /* Default to span 1 column if not specifically overridden */
+  grid-column: span 1;
 }
+
+/* Make the Temperature Trend chart panel span all available columns */
+#temperatureTrendPanel {
+  grid-column: 1 / -1; /* Span all columns in the grid */
+}
+
 @media (max-width: 900px) {
-  /* On smaller screens, charts take full width */
+  /* On smaller screens, all charts take full width (span 1 is effectively full width if grid becomes single column) */
   .chart-panel {
+    /* This applies to equalization chart too */
+    grid-column: span 1;
+  }
+  #temperatureTrendPanel {
+    /* Ensure it also spans 1 on smaller screens if grid is 1 column */
     grid-column: span 1;
   }
 }
@@ -389,9 +401,11 @@ body {
     grid-template-columns: 1fr; /* Stack panels on smaller screens */
     padding-top: 0;
   }
-  .chart-panel,
+  /* Ensure all panels, including specific ones, span 1 column */
+  .panel,
+  #temperatureTrendPanel,
   .log-panel {
-    grid-column: auto; /* Reset span */
+    grid-column: span 1 !important; /* Use important to override more specific rules if necessary, or ensure specificity */
   }
   .control-group input[type="number"],
   .control-group input[type="datetime-local"],

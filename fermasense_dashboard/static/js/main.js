@@ -4,15 +4,15 @@ const socket = io(); // Connect to the Socket.IO server
 // DOM Elements
 const mcuTimeEl = document.getElementById("mcuTime");
 const currentTempEl = document.getElementById("currentTemp");
-const setTempRangeEl = document.getElementById("setTempRange"); // Updated
+const setTempRangeEl = document.getElementById("setTempRange");
 const currentModeEl = document.getElementById("currentMode");
 const currentStateEl = document.getElementById("currentState");
-const stateIndicatorEl = document.getElementById("stateIndicator"); // Updated
+const stateIndicatorEl = document.getElementById("stateIndicator");
 const readIntervalEl = document.getElementById("readInterval");
 const lastEqTimeEl = document.getElementById("lastEqTime");
 
-const targetTempMinInput = document.getElementById("targetTempMinInput"); // New
-const targetTempMaxInput = document.getElementById("targetTempMaxInput"); // New
+const targetTempMinInput = document.getElementById("targetTempMinInput");
+const targetTempMaxInput = document.getElementById("targetTempMaxInput");
 const readIntervalInput = document.getElementById("readIntervalInput");
 const manualControlsDiv = document.getElementById("manualControls");
 const btnModeAuto = document.getElementById("btnModeAuto");
@@ -47,7 +47,7 @@ const chartDataStore = {
   equalizationEvents: [],
 };
 
-const MAX_LIVE_DATAPOINTS_DEFAULT = 360; // For 1 hour at 10s interval
+const MAX_LIVE_DATAPOINTS_DEFAULT = 360; // Default for 1 hour at 10s interval, will be dynamically calculated
 let maxLiveDatapoints = MAX_LIVE_DATAPOINTS_DEFAULT;
 
 function initializeCharts() {
@@ -60,7 +60,7 @@ function initializeCharts() {
           label: "Current Temp (°C)",
           borderColor: "rgba(230, 126, 34, 1)", // Orange
           backgroundColor: "rgba(230, 126, 34, 0.1)",
-          data: chartDataStore.currentTemp,
+          data: [], // Will reference chartDataStore.currentTemp after filtering
           tension: 0.2,
           fill: true,
           pointRadius: 1,
@@ -70,7 +70,7 @@ function initializeCharts() {
           label: "Target Min (°C)",
           borderColor: "rgba(52, 152, 219, 0.8)", // Lighter Blue
           backgroundColor: "rgba(52, 152, 219, 0.05)",
-          data: chartDataStore.setTempMin,
+          data: [], // Will reference chartDataStore.setTempMin after filtering
           stepped: true,
           fill: "+1", // Fill to next dataset (Target Max)
           pointRadius: 0,
@@ -81,7 +81,7 @@ function initializeCharts() {
           label: "Target Max (°C)",
           borderColor: "rgba(52, 152, 219, 1)", // Blue
           backgroundColor: "rgba(52, 152, 219, 0.1)", // Area between min and max
-          data: chartDataStore.setTempMax,
+          data: [], // Will reference chartDataStore.setTempMax after filtering
           stepped: true,
           fill: false,
           pointRadius: 0,
@@ -98,7 +98,11 @@ function initializeCharts() {
           time: {
             unit: "minute",
             tooltipFormat: "MMM d, yyyy, h:mm:ss a",
-            displayFormats: { minute: "h:mm a", hour: "h a" },
+            displayFormats: {
+              second: "h:mm:ss a",
+              minute: "h:mm a",
+              hour: "h a",
+            },
           },
           title: { display: true, text: "Time" },
         },
@@ -112,19 +116,19 @@ function initializeCharts() {
         legend: { position: "top" },
         tooltip: { mode: "index", intersect: false },
       },
-      animation: { duration: 200 },
+      animation: { duration: 200 }, // Shorter animation for quicker updates
     },
   });
 
   const eqCtx = document.getElementById("equalizationChart").getContext("2d");
   equalizationChart = new Chart(eqCtx, {
-    type: "bar", // Or 'line' if preferred for trend
+    type: "bar",
     data: {
       datasets: [
         {
           label: "Equalization Time (seconds)",
-          data: chartDataStore.equalizationEvents, // {x: timestamp, y: duration_s, target_temp: val}
-          backgroundColor: "rgba(26, 188, 156, 0.6)", // Cool color
+          data: [], // Will reference chartDataStore.equalizationEvents after filtering
+          backgroundColor: "rgba(26, 188, 156, 0.6)",
           borderColor: "rgba(26, 188, 156, 1)",
           borderWidth: 1,
         },
@@ -156,10 +160,18 @@ function initializeCharts() {
               if (context.parsed.y !== null) {
                 label += `${context.parsed.y.toFixed(1)}s`;
               }
-              const originalData =
-                chartDataStore.equalizationEvents[context.dataIndex];
-              if (originalData && originalData.target_temp) {
-                label += ` (Target: ${originalData.target_temp.toFixed(1)}°C)`;
+              // Find the original data point in chartDataStore.equalizationEvents
+              // This is a bit tricky as context.dataIndex refers to the filtered data.
+              // For simplicity, we'll rely on the parsed value.
+              // A more robust way would be to pass the full item to the tooltip or search by x value.
+              const originalDataPoint =
+                equalizationChart.data.datasets[context.datasetIndex].data[
+                  context.dataIndex
+                ];
+              if (originalDataPoint && originalDataPoint.target_temp) {
+                label += ` (Target: ${originalDataPoint.target_temp.toFixed(
+                  1
+                )}°C)`;
               }
               return label;
             },
@@ -168,8 +180,8 @@ function initializeCharts() {
       },
     },
   });
-  loadHistoricalData();
-  loadEqualizationData();
+  loadHistoricalData(); // Load initial data for temp chart
+  loadEqualizationData(); // Load initial data for eq chart
 }
 
 // --- SocketIO Event Handlers ---
@@ -192,18 +204,28 @@ socket.on("new_data", (data) => {
 
   const timestamp = new Date(data.server_time_iso).getTime();
   if (temperatureChart) {
-    addDataToTemperatureChart(
+    addDataToTemperatureChartStore(
+      // Add to store first
       timestamp,
       data.current_temp,
       data.set_temp_min,
       data.set_temp_max
     );
-    pruneChartData(
-      chartDataStore.currentTemp,
-      chartDataStore.setTempMin,
-      chartDataStore.setTempMax
-    );
-    temperatureChart.update("none");
+    // Pruning and updating is now handled by filterAndApplyDataToChart if it's a live view
+    // or simply by re-filtering if not live.
+    // For live views, we need to ensure the chart updates immediately.
+    if (chartTimeRangeSelect.value.startsWith("live_")) {
+      pruneChartDataStore(); // Prune the main store based on current live view settings
+      filterAndApplyDataToChart(
+        // Re-filter and update chart
+        temperatureChart,
+        null, // Source data array is not used for temp chart, it uses chartDataStore
+        chartTimeRangeSelect.value,
+        chartStartDateInput.value,
+        chartEndDateInput.value
+      );
+    }
+    // No explicit temperatureChart.update() here, filterAndApplyDataToChart handles it.
   }
 });
 
@@ -220,9 +242,25 @@ socket.on("initial_status", (status) => {
   currentModeEl.textContent = status.mode;
   currentStateEl.textContent = status.state;
   readIntervalEl.textContent = `${status.frequency_ms} ms`;
+
+  const oldReadInterval = readIntervalInput.value;
   readIntervalInput.value = status.frequency_ms;
+
   updateUIMode(status.mode);
   updateStateIndicator(status.state);
+
+  // If read interval changed and current view is live, refresh chart
+  if (
+    temperatureChart &&
+    chartTimeRangeSelect.value.startsWith("live_") &&
+    oldReadInterval !== readIntervalInput.value
+  ) {
+    addLogMessage(
+      `Read interval updated to ${status.frequency_ms}ms. Refreshing live chart.`,
+      "info"
+    );
+    updateChartDisplayRange(); // This will recalculate maxLiveDatapoints and re-filter
+  }
 });
 
 socket.on("equalization_update", (data) => {
@@ -233,16 +271,18 @@ socket.on("equalization_update", (data) => {
   ).toLocaleTimeString()})`;
   if (equalizationChart) {
     const timestamp = new Date(data.server_time_iso).getTime();
-    chartDataStore.equalizationEvents.push({
+    const newDataPoint = {
       x: timestamp,
       y: parseFloat(data.duration_s),
       target_temp: parseFloat(data.target_temp),
-    });
-    // Sort and prune if necessary for live view, though less critical for event-based chart
-    chartDataStore.equalizationEvents.sort((a, b) => a.x - b.x);
+    };
+    chartDataStore.equalizationEvents.push(newDataPoint);
+    chartDataStore.equalizationEvents.sort((a, b) => a.x - b.x); // Keep sorted
+
+    // Re-filter and apply to chart
     filterAndApplyDataToChart(
       equalizationChart,
-      chartDataStore.equalizationEvents,
+      chartDataStore.equalizationEvents, // Pass the full sorted store
       eqChartTimeRangeSelect.value,
       eqChartStartDateInput.value,
       eqChartEndDateInput.value
@@ -264,15 +304,6 @@ socket.on("available_serial_ports", (ports) => {
     }
     serialPortSelect.appendChild(option);
   });
-  if (
-    ports.length > 0 &&
-    !currentSelected &&
-    serialPortSelect.options.length > 1 &&
-    ports.includes(ports[0])
-  ) {
-    // If auto was selected and we got a list, maybe pre-select the first one or the one server is using.
-    // For now, let user re-select or rely on backend's current port.
-  }
 });
 
 socket.on("serial_port_status", (status) => {
@@ -280,8 +311,9 @@ socket.on("serial_port_status", (status) => {
     `Serial Port: ${status.message}`,
     status.status === "success" ? "success" : "error"
   );
-  if (status.port) {
-    serialPortSelect.value = status.port; // Update dropdown if backend confirms a port
+  if (status.port && serialPortSelect.value !== status.port) {
+    // Update dropdown if backend confirms a port and it's different
+    serialPortSelect.value = status.port;
   }
 });
 
@@ -298,7 +330,7 @@ function updateStateIndicator(state) {
 function updateUIMode(mode) {
   currentModeEl.textContent = mode;
   if (mode === "MANUAL") {
-    manualControlsDiv.style.display = "flex"; // or 'block'
+    manualControlsDiv.style.display = "flex";
     btnModeManual.classList.add("active");
     btnModeAuto.classList.remove("active");
   } else {
@@ -311,7 +343,7 @@ function updateUIMode(mode) {
 
 function addLogMessage(message, type = "info") {
   const logEntry = document.createElement("div");
-  const typeClass = type.toLowerCase().split("_")[0]; // e.g. 'info', 'error', 'cmd'
+  const typeClass = type.toLowerCase().split("_")[0];
   logEntry.classList.add(`log-${typeClass}`);
   logEntry.innerHTML = `[${new Date().toLocaleTimeString()}] ${message
     .replace(/</g, "&lt;")
@@ -320,8 +352,8 @@ function addLogMessage(message, type = "info") {
   mcuLogOutputEl.scrollTop = mcuLogOutputEl.scrollHeight;
 }
 
-// --- Chart Functions ---
-function addDataToTemperatureChart(
+// --- Chart Data Store Functions ---
+function addDataToTemperatureChartStore(
   timestamp,
   currentTemp,
   setTempMin,
@@ -330,12 +362,19 @@ function addDataToTemperatureChart(
   chartDataStore.currentTemp.push({ x: timestamp, y: parseFloat(currentTemp) });
   chartDataStore.setTempMin.push({ x: timestamp, y: parseFloat(setTempMin) });
   chartDataStore.setTempMax.push({ x: timestamp, y: parseFloat(setTempMax) });
+  // No sorting here, assume data comes in order or sort after batch load. Live data is appended.
 }
 
-function pruneChartData(...datasets) {
+function pruneChartDataStore() {
   const range = chartTimeRangeSelect.value;
   if (range.startsWith("live_")) {
-    datasets.forEach((dataset) => {
+    // maxLiveDatapoints should be up-to-date via getChartTimeWindow
+    // This prunes the global chartDataStore arrays.
+    [
+      chartDataStore.currentTemp,
+      chartDataStore.setTempMin,
+      chartDataStore.setTempMax,
+    ].forEach((dataset) => {
       while (dataset.length > maxLiveDatapoints) {
         dataset.shift();
       }
@@ -343,35 +382,72 @@ function pruneChartData(...datasets) {
   }
 }
 
+// --- Chart Display and Filtering Functions ---
 function getChartTimeWindow(rangeValue, startDateVal, endDateVal) {
   const now = new Date().getTime();
   let minTime,
-    maxTime = now + 5 * 60 * 1000; // Add padding for live
-  let unit = "minute";
+    maxTime = now + 1 * 60 * 1000; // Add a small future padding for live views
+  let unit = "minute"; // Default unit
+
+  const currentReadIntervalMs = parseInt(readIntervalInput.value) || 5000;
+  const readIntervalSeconds = currentReadIntervalMs / 1000;
 
   if (rangeValue.startsWith("live_")) {
-    const hours = parseInt(rangeValue.split("_")[1].replace("h", ""));
-    minTime = now - hours * 60 * 60 * 1000;
-    maxLiveDatapoints =
-      hours * 60 * (60 / (parseInt(readIntervalInput.value) / 1000 || 5));
-    if (hours <= 1) unit = "minute";
-    else if (hours <= 24) unit = "hour";
-    else unit = "day";
+    const specifier = rangeValue.split("_")[1]; // e.g., "1m", "5m", "30m", "1h", "6h", "12h"
+    let durationMs;
+    const value = parseInt(specifier);
+
+    if (specifier.endsWith("m")) {
+      // Minutes
+      durationMs = value * 60 * 1000;
+      minTime = now - durationMs;
+      if (value <= 1) {
+        // 1m
+        unit = "second"; // More granular for very short times
+        maxTime = now + 10 * 1000; // Shorter future padding for 1m
+      } else if (value <= 5) {
+        // 5m
+        unit = "minute"; // Can be 'second' too if desired
+      } else {
+        // 30m
+        unit = "minute";
+      }
+    } else if (specifier.endsWith("h")) {
+      // Hours
+      durationMs = value * 60 * 60 * 1000;
+      minTime = now - durationMs;
+      if (value <= 1) unit = "minute"; // 1h
+      else if (value <= 12) unit = "hour"; // 6h, 12h
+      else unit = "day"; // For longer hypothetical live views
+    } else {
+      // Fallback for unknown live specifier, e.g. default to 1 hour
+      durationMs = 1 * 60 * 60 * 1000;
+      minTime = now - durationMs;
+      unit = "minute";
+    }
+    // Calculate maxLiveDatapoints based on the duration of the live window and read interval
+    maxLiveDatapoints = Math.max(
+      20,
+      Math.ceil(durationMs / 1000 / readIntervalSeconds)
+    ); // Ensure a minimum number of points
   } else if (rangeValue.startsWith("day_")) {
     const days = parseInt(rangeValue.split("_")[1]);
-    minTime =
-      new Date().setHours(0, 0, 0, 0) - (days - 1) * 24 * 60 * 60 * 1000;
-    unit = days <= 3 ? "hour" : "day";
+    minTime = new Date(
+      new Date().setHours(0, 0, 0, 0) - (days - 1) * 24 * 60 * 60 * 1000
+    ).getTime();
+    maxTime = new Date(new Date().setHours(23, 59, 59, 999)).getTime(); // End of today
+    unit = days <= 1 ? "hour" : "day"; // For "Today", show hours. For multiple days, show days.
   } else if (rangeValue === "all") {
-    minTime = null; // Load all
-    unit = "day";
+    minTime = null;
+    maxTime = null; // Chart.js will auto-fit if min/max are null
+    unit = "day"; // Sensible default unit for all data
   } else if (rangeValue === "custom" || rangeValue === "custom_eq") {
     minTime = startDateVal ? new Date(startDateVal).getTime() : null;
-    maxTime = endDateVal ? new Date(endDateVal).getTime() : now; // Default end to now if not set
-    // Determine unit based on range duration
-    const duration = maxTime - minTime;
-    if (duration <= 2 * 60 * 60 * 1000) unit = "minute"; // <= 2 hours
-    else if (duration <= 2 * 24 * 60 * 60 * 1000) unit = "hour"; // <= 2 days
+    maxTime = endDateVal ? new Date(endDateVal).getTime() : now;
+    const duration =
+      maxTime && minTime ? maxTime - minTime : 2 * 24 * 60 * 60 * 1000; // Default to 2 days if one is null
+    if (duration <= 2 * 60 * 60 * 1000) unit = "minute";
+    else if (duration <= 2 * 24 * 60 * 60 * 1000) unit = "hour";
     else unit = "day";
   }
   return { minTime, maxTime, unit };
@@ -384,23 +460,16 @@ function filterAndApplyDataToChart(
   startDateVal,
   endDateVal
 ) {
+  if (!chart) return;
+
   const { minTime, maxTime, unit } = getChartTimeWindow(
     rangeValue,
     startDateVal,
     endDateVal
   );
 
-  let filteredData = sourceDataArray;
-  if (minTime || maxTime) {
-    filteredData = sourceDataArray.filter(
-      (point) =>
-        (!minTime || point.x >= minTime) && (!maxTime || point.x <= maxTime)
-    );
-  }
-
-  chart.data.datasets[0].data = filteredData; // Assuming single dataset for eq chart
   if (chart === temperatureChart) {
-    // Special handling for multi-dataset temp chart
+    // Temperature chart uses global chartDataStore arrays directly
     chart.data.datasets[0].data = chartDataStore.currentTemp.filter(
       (p) => (!minTime || p.x >= minTime) && (!maxTime || p.x <= maxTime)
     );
@@ -410,62 +479,123 @@ function filterAndApplyDataToChart(
     chart.data.datasets[2].data = chartDataStore.setTempMax.filter(
       (p) => (!minTime || p.x >= minTime) && (!maxTime || p.x <= maxTime)
     );
+  } else if (chart === equalizationChart && sourceDataArray) {
+    // Equalization chart uses the provided sourceDataArray (which should be chartDataStore.equalizationEvents)
+    const filteredData = sourceDataArray.filter(
+      (p) => (!minTime || p.x >= minTime) && (!maxTime || p.x <= maxTime)
+    );
+    chart.data.datasets[0].data = filteredData.map((d) => ({ ...d })); // Pass copy to chart
   }
 
   chart.options.scales.x.min = minTime;
   chart.options.scales.x.max = maxTime;
   chart.options.scales.x.time.unit = unit;
-  chart.update();
+
+  // Adjust display formats for x-axis ticks based on the unit
+  if (unit === "second") {
+    chart.options.scales.x.time.displayFormats = { second: "HH:mm:ss" };
+  } else if (unit === "minute") {
+    chart.options.scales.x.time.displayFormats = {
+      minute: "HH:mm",
+      hour: "HH:mm",
+    }; // Show hour if span is large
+  } else if (unit === "hour") {
+    chart.options.scales.x.time.displayFormats = {
+      hour: "MMM d, HH:mm",
+      day: "MMM d",
+    };
+  } else {
+    // day or other
+    chart.options.scales.x.time.displayFormats = {
+      day: "MMM d",
+      month: "MMM yyyy",
+    };
+  }
+
+  chart.update("none"); // Use "none" to avoid jerky updates when live data comes in fast
 }
 
 function updateChartDisplayRange() {
   if (!temperatureChart) return;
   const range = chartTimeRangeSelect.value;
   customDateRangePicker.style.display = range === "custom" ? "flex" : "none";
-  if (range !== "custom") {
-    loadHistoricalData(true); // Force reload and filter
+
+  // For live ranges, we might not need to call loadHistoricalData if data is already flowing.
+  // However, loadHistoricalData also ensures the chartDataStore is populated if it was empty.
+  // And filterAndApplyDataToChart will correctly filter it.
+  // If switching TO a live view, or between live views, this ensures correct maxLiveDatapoints and filtering.
+  if (range.startsWith("live_")) {
+    // Calculate new window parameters (maxLiveDatapoints is updated in getChartTimeWindow)
+    const { minTime, maxTime, unit } = getChartTimeWindow(
+      range,
+      chartStartDateInput.value,
+      chartEndDateInput.value
+    );
+    // Prune existing data in store if necessary
+    pruneChartDataStore();
+    // Re-filter and apply to chart
+    filterAndApplyDataToChart(
+      temperatureChart,
+      null,
+      range,
+      chartStartDateInput.value,
+      chartEndDateInput.value
+    );
+  } else {
+    // For non-live ranges (day_X, all, custom), always reload/re-filter from full historical data.
+    loadHistoricalData(true); // true to force re-filter from chartDataStore
   }
 }
 
 function applyCustomDateRange() {
-  loadHistoricalData(true);
+  loadHistoricalData(true); // Reload and filter with custom dates
 }
 
 async function loadHistoricalData(forceFilter = false) {
   try {
-    addLogMessage("Loading temperature chart data...", "info");
+    // Only fetch if chartDataStore is empty or if not forcing a filter from existing data
+    // This check is removed to ensure data is always fresh when this function is explicitly called.
+    addLogMessage("Loading temperature chart data from server...", "info");
     const response = await fetch("/get_historical_data");
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const data = await response.json();
 
+    // Clear and repopulate the chartDataStore
     chartDataStore.currentTemp = [];
     chartDataStore.setTempMin = [];
     chartDataStore.setTempMax = [];
 
     data.forEach((point) => {
-      chartDataStore.currentTemp.push({ x: point.x, y: point.current_temp });
-      chartDataStore.setTempMin.push({ x: point.x, y: point.set_temp_min });
-      chartDataStore.setTempMax.push({ x: point.x, y: point.set_temp_max });
+      // addDataToTemperatureChartStore ensures floats are parsed
+      addDataToTemperatureChartStore(
+        point.x,
+        point.current_temp,
+        point.set_temp_min,
+        point.set_temp_max
+      );
     });
 
+    // Sort data after loading all of it
     chartDataStore.currentTemp.sort((a, b) => a.x - b.x);
     chartDataStore.setTempMin.sort((a, b) => a.x - b.x);
     chartDataStore.setTempMax.sort((a, b) => a.x - b.x);
 
-    filterAndApplyDataToChart(
-      temperatureChart,
-      [],
-      chartTimeRangeSelect.value,
-      chartStartDateInput.value,
-      chartEndDateInput.value
-    ); // Pass empty array as sourceData is handled by chartDataStore
     addLogMessage(
-      `Temp chart data updated: ${chartDataStore.currentTemp.length} points.`,
+      `Temp chart data store updated: ${chartDataStore.currentTemp.length} points.`,
       "info"
     );
   } catch (error) {
     console.error("Could not load historical temp data:", error);
-    addLogMessage(`Error loading temp chart: ${error}`, "error");
+    addLogMessage(`Error loading temp chart data: ${error}`, "error");
+  } finally {
+    // Always filter and apply, even if fetch failed (to clear chart or use existing data if forceFilter is true)
+    filterAndApplyDataToChart(
+      temperatureChart,
+      null, // Not used for temp chart
+      chartTimeRangeSelect.value,
+      chartStartDateInput.value,
+      chartEndDateInput.value
+    );
   }
 }
 
@@ -476,7 +606,7 @@ function updateEqualizationChartDisplayRange() {
   customEqDateRangePicker.style.display =
     range === "custom_eq" ? "flex" : "none";
   if (range !== "custom_eq") {
-    loadEqualizationData(true); // Force reload and filter
+    loadEqualizationData(true);
   }
 }
 
@@ -486,10 +616,10 @@ function applyCustomEqDateRange() {
 
 async function loadEqualizationData(forceFilter = false) {
   try {
-    addLogMessage("Loading equalization chart data...", "info");
-    const response = await fetch("/get_equalization_log"); // New endpoint needed
+    addLogMessage("Loading equalization chart data from server...", "info");
+    const response = await fetch("/get_equalization_log");
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    const data = await response.json(); // Expecting {x: timestamp, y: duration_s, target_temp: val}
+    const data = await response.json();
 
     chartDataStore.equalizationEvents = data
       .map((d) => ({
@@ -499,20 +629,21 @@ async function loadEqualizationData(forceFilter = false) {
       }))
       .sort((a, b) => a.x - b.x);
 
-    filterAndApplyDataToChart(
-      equalizationChart,
-      chartDataStore.equalizationEvents,
-      eqChartTimeRangeSelect.value,
-      eqChartStartDateInput.value,
-      eqChartEndDateInput.value
-    );
     addLogMessage(
-      `Equalization chart data updated: ${chartDataStore.equalizationEvents.length} points.`,
+      `Equalization chart data store updated: ${chartDataStore.equalizationEvents.length} events.`,
       "info"
     );
   } catch (error) {
     console.error("Could not load equalization data:", error);
-    addLogMessage(`Error loading equalization chart: ${error}`, "error");
+    addLogMessage(`Error loading equalization chart data: ${error}`, "error");
+  } finally {
+    filterAndApplyDataToChart(
+      equalizationChart,
+      chartDataStore.equalizationEvents, // Pass the full sorted store
+      eqChartTimeRangeSelect.value,
+      eqChartStartDateInput.value, // These are for main chart, but getChartTimeWindow will handle custom_eq
+      eqChartEndDateInput.value
+    );
   }
 }
 
@@ -526,8 +657,9 @@ function sendCommandToMCU(command) {
     .then((response) => response.json())
     .then((data) => {
       if (data.status === "success") {
-        if (command === "MODE_AUTO") updateUIMode("AUTO");
-        if (command === "MODE_MANUAL") updateUIMode("MANUAL");
+        // MCU will send back its new status via 'initial_status' or 'new_data'
+        // UI mode updates (like manualControls visibility) are handled by 'initial_status' or 'new_data'
+        // addLogMessage(`Command "${command}" sent successfully.`, "cmd_sent"); // Already logged by backend
       } else {
         addLogMessage(
           `Command failed: ${data.message || "Unknown error"}`,
@@ -552,8 +684,14 @@ function setTargetTemperatureRange() {
     );
     return;
   }
-  if (tempMin > tempMax) {
-    addLogMessage("Target Min cannot be greater than Target Max.", "error");
+  if (tempMin >= tempMax) {
+    // Allow min == max for a specific setpoint
+    addLogMessage(
+      "Target Min must be less than Target Max for a range.",
+      "error"
+    );
+    // Or, if min === max is allowed, adjust message. Assuming range for now.
+    // If you want to allow min === max, change to: if (tempMin > tempMax)
     return;
   }
   if (
@@ -575,16 +713,17 @@ function setTargetTemperatureRange() {
 
 function setReadInterval() {
   const interval = parseInt(readIntervalInput.value);
-  if (
-    !isNaN(interval) &&
-    interval >= parseInt(readIntervalInput.min) &&
-    interval <= parseInt(readIntervalInput.max)
-  ) {
+  const minInterval = parseInt(readIntervalInput.min);
+  const maxInterval = parseInt(readIntervalInput.max);
+
+  if (!isNaN(interval) && interval >= minInterval && interval <= maxInterval) {
     sendCommandToMCU(`SET_FREQ=${interval}`);
-    readIntervalEl.textContent = `${interval} ms`; // Optimistic update
+    // Optimistic UI update for the display field; actual value confirmed by 'initial_status'
+    // readIntervalEl.textContent = `${interval} ms`;
+    // The 'initial_status' event will update the chart if needed.
   } else {
     addLogMessage(
-      `Invalid read interval: ${readIntervalInput.value}. Must be between ${readIntervalInput.min}-${readIntervalInput.max}ms.`,
+      `Invalid read interval: ${readIntervalInput.value}. Must be between ${minInterval}-${maxInterval}ms.`,
       "error"
     );
   }
@@ -611,11 +750,17 @@ function setSerialPort() {
 
 // --- Initialization ---
 window.onload = () => {
-  initializeCharts();
-  updateChartDisplayRange();
-  updateEqualizationChartDisplayRange();
-  refreshSerialPorts(); // Get initial list of ports
-  setTimeout(() => sendCommandToMCU("GET_STATUS"), 1000); // Request initial status
+  initializeCharts(); // This now calls loadHistoricalData and loadEqualizationData internally
+  updateChartDisplayRange(); // Set initial chart view based on default selection
+  updateEqualizationChartDisplayRange(); // Set initial EQ chart view
+  refreshSerialPorts();
+
+  // Request initial status after a short delay to ensure socket is fully ready
+  // and charts are initialized.
+  setTimeout(() => {
+    sendCommandToMCU("GET_STATUS");
+    addLogMessage("Requested initial device status.", "info");
+  }, 1000);
 
   // Event listeners for custom date range selectors
   chartTimeRangeSelect.addEventListener("change", updateChartDisplayRange);
@@ -630,6 +775,5 @@ document.addEventListener("mouseover", function (e) {
   const target = e.target.closest("[title]");
   if (target) {
     // Basic browser tooltip is usually sufficient.
-    // For custom tooltips, you'd create and position an element here.
   }
 });
