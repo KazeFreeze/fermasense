@@ -85,7 +85,8 @@ def log_to_csv(file_path, data_dict, fieldnames):
     try:
         with open(file_path, "a", newline="", encoding="utf-8") as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            if not file_exists:
+            # Write header if the file is new OR if it exists but is empty
+            if not (file_exists and os.path.getsize(file_path) > 0):
                 writer.writeheader()
             writer.writerow(data_dict)
     except IOError as e:
@@ -96,7 +97,7 @@ def log_to_csv(file_path, data_dict, fieldnames):
 def serial_reader_thread():
     global ser, SERIAL_PORT
     print("INFO: Serial reader thread started.")
-    
+
     connection_attempt_interval = 5 # seconds
     last_connection_status_update = 0
 
@@ -110,13 +111,13 @@ def serial_reader_thread():
             continue
 
         if ser is None or not ser.is_open:
-            with serial_lock: 
+            with serial_lock:
                 if ser is not None and ser.is_open: # Double check
-                    pass 
+                    pass
                 else:
-                    if ser is not None: 
+                    if ser is not None:
                         try:
-                            ser.close() 
+                            ser.close()
                             print(f"DEBUG: Closed existing non-open serial port object for {SERIAL_PORT}.")
                         except Exception as e_close:
                             print(f"ERROR: Error trying to close non-open serial port {SERIAL_PORT}: {e_close}")
@@ -134,26 +135,26 @@ def serial_reader_thread():
                         send_command_to_mcu("GET_STATUS") # Send GET_STATUS after successful connection
                         last_connection_status_update = time.time()
                     except serial.SerialException as e:
-                        ser = None 
+                        ser = None
                         print(f"ERROR: Serial connection error on {SERIAL_PORT}: {e}")
                         socketio.emit("mcu_log", {"type": "error", "message": f"Serial connection to {SERIAL_PORT} failed: {e}. Retrying..."})
                         socketio.emit("serial_port_status", {"status": "error", "message": f"Failed: {e}", "port": SERIAL_PORT})
                         last_connection_status_update = time.time()
-                    except Exception as e_generic: 
+                    except Exception as e_generic:
                         ser = None
                         print(f"ERROR: Generic error during serial connection attempt on {SERIAL_PORT}: {e_generic}")
                         socketio.emit("mcu_log", {"type": "error", "message": f"Unexpected error connecting to {SERIAL_PORT}: {e_generic}. Retrying..."})
                         last_connection_status_update = time.time()
 
-            if ser is None or not ser.is_open: 
-                time.sleep(connection_attempt_interval) 
+            if ser is None or not ser.is_open:
+                time.sleep(connection_attempt_interval)
                 continue
-        
+
         try:
             if ser.in_waiting > 0:
-                line_bytes = ser.readline() 
+                line_bytes = ser.readline()
                 line = line_bytes.decode("utf-8", errors="ignore").strip()
-                print(f"DEBUG: MCU RAW >> {line}") 
+                print(f"DEBUG: MCU RAW >> {line}")
                 if line:
                     timestamp_iso = datetime.now().isoformat()
                     parts = line.split(",")
@@ -178,7 +179,7 @@ def serial_reader_thread():
                         try:
                             eq_chart_event = {
                                 "server_time_iso": timestamp_iso,
-                                "target_temp": float(parts[1]), 
+                                "target_temp": float(parts[1]), # This is target_temp_min from Arduino
                                 "duration_s": float(parts[3]),
                             }
                             socketio.emit("equalization_update", eq_chart_event)
@@ -187,7 +188,7 @@ def serial_reader_thread():
                         except ValueError as e:
                             print(f"ERROR: Parsing EQUALIZED line: {line} - {e}")
                             socketio.emit("mcu_log", {"type": "error", "message": f"Equalization parse error: {line}"})
-                    elif parts[0] == "STATUS" and len(parts) >= 10:
+                    elif parts[0] == "STATUS" and len(parts) >= 10: # Ensure enough parts for all fields
                         try:
                             status_payload = {
                                 "mcu_time_s": float(parts[1]),
@@ -206,29 +207,28 @@ def serial_reader_thread():
                             print(f"ERROR: {message}")
                             socketio.emit("mcu_log", {"type": "error", "message": message})
                     elif parts[0] in ["INFO", "ERROR", "CMD_RECV", "WARN"]:
-                        log_type = parts[0].lower() 
-                        socketio.emit("mcu_log", {"type": log_type, "message": line}) 
+                        log_type = parts[0].lower()
+                        socketio.emit("mcu_log", {"type": log_type, "message": line})
                     else:
                         socketio.emit("mcu_log", {"type": "unknown", "message": f"MCU_UNKNOWN: {line}"})
             else:
-                time.sleep(0.05) 
+                time.sleep(0.05)
         except serial.SerialException as e:
             print(f"ERROR: Serial communication error during read on {SERIAL_PORT}: {e}")
             socketio.emit("mcu_log", {"type": "error", "message": f"Serial Port Error: {e}. Connection lost."})
             socketio.emit("serial_port_status", {"status": "error", "message": f"Disconnected: {e}", "port": SERIAL_PORT})
-            with serial_lock: 
+            with serial_lock:
                 if ser:
                     try:
                         ser.close()
                     except Exception as e_close:
                         print(f"ERROR: Error closing serial port on read error: {e_close}")
-                ser = None 
+                ser = None
             last_connection_status_update = time.time()
-            time.sleep(connection_attempt_interval / 2) 
+            time.sleep(connection_attempt_interval / 2)
         except Exception as e: # Catch other unexpected errors during read loop
             print(f"ERROR: Unexpected error in serial_reader_thread loop: {e.__class__.__name__}: {e}")
             socketio.emit("mcu_log", {"type": "error", "message": f"Backend processing error: {e}"})
-            # Potentially add ser = None here if the error is severe enough to warrant a port reset
             time.sleep(1)
 
     print("INFO: Serial reader thread stopping...")
@@ -237,7 +237,7 @@ def serial_reader_thread():
             try:
                 ser.close()
                 print("INFO: Serial port closed by shutdown.")
-            except Exception as e_close_shutdown: # Renamed variable to avoid conflict
+            except Exception as e_close_shutdown:
                 print(f"ERROR: Error closing serial port during shutdown: {e_close_shutdown}")
         ser = None
     print("INFO: Serial reader thread stopped.")
@@ -260,13 +260,13 @@ def send_command_route():
         return jsonify({"status": "error", "message": "Failed to send command. MCU not connected or error."}), 500
 
 def send_command_to_mcu(command_string):
-    global ser 
+    global ser
     print(f"DEBUG: send_command_to_mcu CALLED with command: {command_string}")
     acquired_lock = False
-    success = False # Keep track of success for delay logic
+    success = False 
     try:
         print(f"DEBUG: send_command_to_mcu '{command_string}' attempting to acquire serial_lock...")
-        acquired_lock = serial_lock.acquire(timeout=2) # Timeout for lock acquisition
+        acquired_lock = serial_lock.acquire(timeout=2) 
         if not acquired_lock:
             print(f"ERROR: send_command_to_mcu '{command_string}' FAILED to acquire serial_lock within 2s timeout.")
             socketio.emit("mcu_log", {"type": "error", "message": f"Internal server error: Lock timeout sending {command_string}"})
@@ -278,16 +278,15 @@ def send_command_to_mcu(command_string):
             print(f"DEBUG: send_command_to_mcu '{command_string}' - ser object exists and is_open (Port: {ser.port}).")
             try:
                 ser.write((command_string + "\n").encode("utf-8"))
-                # ser.flush() # Optional: ensure data is sent immediately
                 print(f"INFO: Successfully sent to MCU: {command_string}")
                 socketio.emit("mcu_log", {"type": "cmd_sent", "message": f"CMD > {command_string}"})
-                success = True # Mark as success
+                success = True
                 return True
-            except serial.SerialException as e: 
+            except serial.SerialException as e:
                 print(f"ERROR: SerialException while writing to MCU '{command_string}': {e}")
                 socketio.emit("mcu_log", {"type": "error", "message": f"Error sending command (SerialException): {e}"})
                 return False
-            except Exception as e: 
+            except Exception as e:
                 print(f"ERROR: Generic error writing to MCU '{command_string}': {e}")
                 socketio.emit("mcu_log", {"type": "error", "message": f"Error sending command (Exception): {e}"})
                 return False
@@ -302,7 +301,7 @@ def send_command_to_mcu(command_string):
         if acquired_lock:
             serial_lock.release()
             print(f"DEBUG: send_command_to_mcu '{command_string}' released serial_lock.")
-        if success: # Only apply delay if the command was successfully written or attempted through an open port
+        if success: 
             time.sleep(COMMAND_SEND_DELAY)
 
 
@@ -312,8 +311,19 @@ def get_historical_data_route():
         ensure_dir_exists(DATA_DIR)
         data_points = []
         if os.path.exists(MAIN_LOG_FILE):
+            # Check if file is empty, if so, return empty list to avoid DictReader error on empty file
+            if os.path.getsize(MAIN_LOG_FILE) == 0:
+                return jsonify(data_points)
+                
             with open(MAIN_LOG_FILE, "r", newline="", encoding="utf-8") as csvfile:
                 reader = csv.DictReader(csvfile)
+                # Basic check for expected fieldnames if reader.fieldnames is not None
+                expected_main_fieldnames = ["server_time_iso", "mcu_time_s", "current_temp", "set_temp_min", "set_temp_max", "state", "mode"]
+                if reader.fieldnames is None or not all(f in reader.fieldnames for f in expected_main_fieldnames[:3]): # Check a few core fields
+                    print(f"WARNING: Main log CSV ({MAIN_LOG_FILE}) header mismatch or missing. Fields: {reader.fieldnames}")
+                    # Potentially return empty or log an error to frontend
+                    return jsonify(data_points) # Return empty if headers are bad
+
                 for row in reader:
                     try:
                         dt_obj = datetime.fromisoformat(row["server_time_iso"])
@@ -336,8 +346,17 @@ def get_equalization_log_route():
         ensure_dir_exists(DATA_DIR)
         eq_events = []
         if os.path.exists(EQ_LOG_FILE):
+            # Check if file is empty
+            if os.path.getsize(EQ_LOG_FILE) == 0:
+                return jsonify(eq_events)
+
             with open(EQ_LOG_FILE, "r", newline="", encoding="utf-8") as csvfile:
                 reader = csv.DictReader(csvfile)
+                expected_eq_fieldnames = ["server_time_iso", "target_temp", "duration_s"]
+                if reader.fieldnames is None or not all(f in reader.fieldnames for f in expected_eq_fieldnames):
+                    print(f"WARNING: Equalization log CSV ({EQ_LOG_FILE}) header mismatch or missing. Fields: {reader.fieldnames}")
+                    return jsonify(eq_events)
+
                 for row in reader:
                     try:
                         eq_events.append({
@@ -378,29 +397,29 @@ def on_connect():
     client_sid = request.sid
     print(f"INFO: Web client connected: {client_sid}")
     emit("mcu_log", {"type": "info", "message": "Web client connected. Initializing..."})
-    
+
     print(f"DEBUG: on_connect for SID {client_sid} - Checking ser status before GET_STATUS.")
     if ser and ser.is_open:
          print(f"DEBUG: on_connect for SID {client_sid} - ser is open (Port: {ser.port}), calling send_command_to_mcu('GET_STATUS').")
-         send_command_to_mcu("GET_STATUS") 
+         send_command_to_mcu("GET_STATUS")
     else:
         if not ser:
             print(f"DEBUG: on_connect for SID {client_sid} - ser is None. Not sending GET_STATUS from on_connect.")
-        elif not ser.is_open: # ser exists but not open
+        elif not ser.is_open: 
             print(f"DEBUG: on_connect for SID {client_sid} - ser is not open (Port: {ser.port if hasattr(ser, 'port') else 'N/A'}). Not sending GET_STATUS from on_connect.")
-    
+
     emit("available_serial_ports", get_available_serial_ports())
-    
+
     if SERIAL_PORT:
         current_port_status = "unknown"
         current_port_message = f"Port {SERIAL_PORT} selected."
         if ser and ser.is_open:
             current_port_status = "success"
             current_port_message = f"Currently connected to {SERIAL_PORT}"
-        elif ser is None : 
-            current_port_status = "info" # Or "error" if last attempt failed, serial_reader_thread handles this
+        elif ser is None :
+            current_port_status = "info" 
             current_port_message = f"Attempting to connect to {SERIAL_PORT}..."
-        else: # ser exists but not open
+        else: 
             current_port_status = "error"
             current_port_message = f"Port {SERIAL_PORT} selected, but not connected (ser exists but not open)."
         emit("serial_port_status", {"status": current_port_status, "message": current_port_message, "port": SERIAL_PORT})
@@ -420,14 +439,14 @@ def handle_request_serial_ports():
 
 @socketio.on("set_serial_port")
 def handle_set_serial_port(data):
-    global SERIAL_PORT, ser 
+    global SERIAL_PORT, ser
     new_port_selection = data.get("port")
     print(f"DEBUG: Received set_serial_port event with port: {new_port_selection}")
 
-    with serial_lock: 
+    with serial_lock:
         previous_port = SERIAL_PORT
-        
-        if new_port_selection == "":  
+
+        if new_port_selection == "":
             ports = get_available_serial_ports()
             SERIAL_PORT = ports[0] if ports else None
             message = f"Auto-detecting. Selected: {SERIAL_PORT}" if SERIAL_PORT else "Auto-detect: No ports found."
@@ -438,17 +457,12 @@ def handle_set_serial_port(data):
         print(f"INFO: {message}")
         socketio.emit("mcu_log", {"type": "info", "message": message})
 
-        # Condition for resetting serial connection:
-        # 1. SERIAL_PORT actually changed from its previous value.
-        # 2. SERIAL_PORT is not None AND (ser is None OR ser.port is different from the new SERIAL_PORT).
-        #    This handles cases where SERIAL_PORT was already set but connection failed, and user re-selects same port.
-        # 3. SERIAL_PORT becomes None (user deselects port), and it was previously set.
         needs_reset = False
         if SERIAL_PORT != previous_port:
             needs_reset = True
         elif SERIAL_PORT is not None and (ser is None or (hasattr(ser, 'port') and ser.port != SERIAL_PORT)):
             needs_reset = True
-        
+
         if needs_reset:
             print(f"DEBUG: Port change or need for reset detected. Old: {previous_port}, New: {SERIAL_PORT}. Resetting serial connection.")
             if ser and ser.is_open:
@@ -457,17 +471,16 @@ def handle_set_serial_port(data):
                     ser.close()
                 except Exception as e_close:
                     print(f"ERROR: Error closing serial port {ser.port if hasattr(ser, 'port') else 'N/A'} during port change: {e_close}")
-            ser = None # Signal serial_reader_thread to reconnect with the new SERIAL_PORT or stop if SERIAL_PORT is None
+            ser = None 
 
-        save_config() 
+        save_config()
 
         if SERIAL_PORT:
-            # If ser is already connected to this port, reflect that, otherwise show "attempting"
             if ser and ser.is_open and ser.port == SERIAL_PORT:
                  emit("serial_port_status", {"status": "success", "message": f"Connected to {SERIAL_PORT}", "port": SERIAL_PORT})
             else:
                  emit("serial_port_status", {"status": "info", "message": f"Attempting to use {SERIAL_PORT}", "port": SERIAL_PORT})
-        else: # SERIAL_PORT is None
+        else: 
             emit("serial_port_status", {"status": "error", "message": "No port selected/available", "port": None})
 
 
@@ -492,3 +505,4 @@ if __name__ == "__main__":
             else:
                 print("INFO: Serial reader thread finished.")
         print("INFO: Shutdown complete.")
+
