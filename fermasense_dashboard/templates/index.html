@@ -96,6 +96,21 @@
             </button>
           </div>
           <div class="control-group">
+            <button
+              id="reinitMcuButton"
+              onclick="reinitializeMCU()"
+              title="Send a command to reinitialize the FermaSense microcontroller."
+              style="
+                background-color: #f39c12;
+                border-color: #f39c12;
+                width: 100%;
+                margin-top: 10px;
+              "
+            >
+              Reinitialize FermaSense
+            </button>
+          </div>
+          <div class="control-group">
             <label
               for="dataRetentionDays"
               title="Set how many days of historical data to keep (0 for unlimited). Future feature."
