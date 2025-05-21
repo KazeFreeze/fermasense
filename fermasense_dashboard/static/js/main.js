@@ -614,20 +614,33 @@ function sendCommandToMCU(command) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: `command=${encodeURIComponent(command)}`,
   })
-    .then((response) => response.json())
+    .then((response) => {
+      if (!response.ok) {
+        // Check for HTTP errors like 404, 500
+        throw new Error(`HTTP error ${response.status} while sending command.`);
+      }
+      return response.json(); // Attempt to parse as JSON
+    })
     .then((data) => {
       if (data.status === "success") {
-        // MCU will send back its new status via 'initial_status' or 'new_data'
+        // Log specific success for the command sent, if needed, or rely on MCU's CMD_RECV log
+        // addLogMessage(`Command "${command}" successfully sent to server.`, "info");
       } else {
         addLogMessage(
-          `Command failed: ${data.message || "Unknown error"}`,
+          `Server reported error for command "${command}": ${
+            data.message || "Unknown server error"
+          }`,
           "error"
         );
       }
     })
     .catch((error) => {
-      console.error("Error sending command:", error);
-      addLogMessage(`WEB UI Error sending command: ${error}`, "error");
+      console.error(`Error sending command "${command}":`, error);
+      // This will catch network errors, or the error thrown from !response.ok, or JSON parsing errors
+      addLogMessage(
+        `WEB UI Error sending command "${command}": ${error.message || error}`,
+        "error"
+      );
     });
 }
 
@@ -700,38 +713,12 @@ function setSerialPort() {
   socket.emit("set_serial_port", { port: selectedPort });
 }
 
-// --- New function to reinitialize MCU ---
+// --- Modified function to reinitialize MCU ---
 function reinitializeMCU() {
-  addLogMessage("Sending reinitialize command to FermaSense...", "info");
-  fetch("/reinit_mcu", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    // No body needed if the command is fixed in the route
-  })
-    .then((response) => response.json())
-    .then((data) => {
-      if (data.status === "success") {
-        addLogMessage(
-          "Reinitialize command acknowledged by server.",
-          "success"
-        );
-        // The Arduino will send INFO and then a new STATUS update
-      } else {
-        addLogMessage(
-          `Reinitialize command failed: ${
-            data.message || "Unknown server error"
-          }`,
-          "error"
-        );
-      }
-    })
-    .catch((error) => {
-      console.error("Error sending reinitialize command:", error);
-      addLogMessage(
-        `WEB UI Error sending reinitialize command: ${error}`,
-        "error"
-      );
-    });
+  addLogMessage("Sending REINIT command to FermaSense...", "info");
+  sendCommandToMCU("REINIT");
+  // The sendCommandToMCU function handles its own success/error logging for sending.
+  // The MCU will respond with INFO and a new STATUS update, which will be logged via socket events.
 }
 
 // --- Initialization ---
@@ -742,9 +729,20 @@ window.onload = () => {
   refreshSerialPorts();
 
   setTimeout(() => {
-    sendCommandToMCU("GET_STATUS");
-    addLogMessage("Requested initial device status.", "info");
-  }, 1000);
+    // Request initial status after a short delay to allow backend to fully initialize if needed.
+    // The backend serial_reader_thread also sends GET_STATUS on successful connection.
+    // This is a fallback/ensure mechanism from the client side.
+    if (socket.connected) {
+      // Only send if socket is actually connected
+      addLogMessage("Requesting initial device status from client...", "info");
+      sendCommandToMCU("GET_STATUS");
+    } else {
+      addLogMessage(
+        "Socket not connected on load, GET_STATUS not sent from client.",
+        "warn"
+      );
+    }
+  }, 1500); // Increased delay slightly
 
   chartTimeRangeSelect.addEventListener("change", updateChartDisplayRange);
   eqChartTimeRangeSelect.addEventListener(
